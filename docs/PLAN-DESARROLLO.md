@@ -110,7 +110,8 @@ Fase 7).
 1. Crear las carpetas `js/vendor/`, `supabase/`.
 2. **Conservar** `cuidapp_db.json` por ahora: contiene datos reales que se migran en la Fase 7.
 3. Eliminar `server.ps1`, `test_listener.ps1`, `Iniciar_CuidApp.bat`, `js/vitals.js`.
-4. Crear `.gitignore`:
+4. Crear `.gitignore` (**ya hecho** — se creó en el deploy; el `.gitignore` versionado no es idéntico
+   al de abajo, pero cubre el mismo propósito):
 
 ```
 .DS_Store
@@ -1524,6 +1525,9 @@ inicio.
 6. **Solo entonces**, eliminar `cuidapp_db.json` del repositorio.
 
 **Terminado cuando:** las recetas y el plan semanal de v1 se ven en la app desplegada.
+
+> **Pendiente (post-deploy):** `cuidapp_db.json` sigue versionado en el repositorio — el paso 6 no
+> se ejecutó todavía.
 
 ---
 

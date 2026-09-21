@@ -174,7 +174,7 @@ de programación.
 
 ## 2.5 Crear las tablas de datos
 
-El proyecto incluye cinco archivos que construyen toda la base de datos. Hay que ejecutarlos **en
+El proyecto incluye seis archivos que construyen toda la base de datos. Hay que ejecutarlos **en
 orden**.
 
 1. En el menú lateral, entra en **SQL Editor**.
@@ -182,16 +182,18 @@ orden**.
 3. Abre el archivo `supabase/01_schema.sql` de tu proyecto, copia **todo** su contenido y pégalo en
    el editor.
 4. Pulsa **Run** (o `Ctrl+Enter`).
-5. Debe aparecer un mensaje de éxito. Si sale un error, **no sigas**: anota el mensaje y consulta
-   `docs/DEPLOY.md`.
+5. Debe aparecer un mensaje de éxito. Si sale un error, **no sigas ni lo reintentes**: anota el
+   mensaje y consulta `docs/DEPLOY.md`, sección 3 — varios de estos archivos no toleran una segunda
+   ejecución.
 6. Repite exactamente lo mismo, uno por uno y **en este orden**:
 
 ```
-1º  supabase/01_schema.sql      ← las tablas
-2º  supabase/02_functions.sql   ← los cálculos y las operaciones
-3º  supabase/03_audit.sql       ← el registro de auditoría
-4º  supabase/04_rls.sql         ← las reglas de seguridad
-5º  supabase/05_seed.sql        ← los datos iniciales
+1º  supabase/01_schema.sql        ← las tablas
+2º  supabase/02_functions.sql     ← los cálculos y las operaciones
+3º  supabase/03_audit.sql         ← el registro de auditoría
+4º  supabase/04_rls.sql           ← las reglas de seguridad
+5º  supabase/05_seed.sql          ← los datos iniciales
+6º  supabase/06_migracion_v1.sql  ← recetas, plan semanal y datos reales de v1
 ```
 
 > **El orden no es negociable.** Cada archivo usa cosas que creó el anterior. Ejecutarlos
@@ -239,12 +241,18 @@ código cambia, republica solo.
    - Si no aparece, pulsa **Adjust GitHub App Permissions** y dale acceso al repositorio.
 3. En la pantalla de configuración:
    - **Framework Preset:** debe decir **Other**. Si sugiere otra cosa, cámbialo.
+   - **Root Directory:** `./` (el que Vercel propone por defecto).
    - **Build Command:** **déjalo vacío.** CuidApp no necesita compilarse.
    - **Output Directory:** **déjalo vacío.**
    - **Install Command:** **déjalo vacío.**
+   - **Environment Variables:** ninguna. Las credenciales de Supabase viven en `js/config.js`, no en
+     variables de entorno — es un sitio estático sin paso de build, el navegador no puede leer un
+     `.env`.
 
-   > Si Vercel insiste en ejecutar un comando de construcción, el despliegue fallará. Este proyecto
-   > son archivos que se sirven tal cual, sin procesar.
+   > Si Vercel **prerellena** algún valor en Build Command, Output Directory o Install Command,
+   > activa el override de ese campo (el interruptor al lado) para poder borrarlo. No hay
+   > `package.json` ni build: cualquier comando que Vercel intente correr ahí falla el despliegue.
+   > Este proyecto son archivos que se sirven tal cual, sin procesar.
 
 4. Pulsa **Deploy** y espera uno o dos minutos.
 5. Cuando termine te dará una dirección como `https://cuidapp-xxxx.vercel.app`. **Anótala.**
@@ -283,26 +291,45 @@ Este paso es fácil de olvidar y sin él **la recuperación de contraseña no fu
 
 Ya está todo montado. Falta que **tú** entres y te conviertas en administrador.
 
-1. Abre la dirección de tu aplicación en el navegador.
-2. Pulsa **Crear cuenta** y regístrate con tu correo y una contraseña.
-3. Verás el mensaje de que tu cuenta está **pendiente de aprobación**. Es lo correcto: **todo
-   usuario nuevo nace sin permisos** y alguien tiene que activarlo. Como eres el primero, te vas a
-   activar a ti mismo desde Supabase.
-4. Vuelve a Supabase → **SQL Editor** → **New query**.
-5. Pega esto, **cambiando el correo por el tuyo**:
+**Importante:** el camino "regístrate en la app y después corré un `update` simple en el SQL Editor"
+**no funciona**. Hay una protección en la base de datos (el trigger `guard_profiles`) que revierte
+ese `update` sin avisar — la app reporta éxito pero tu cuenta sigue sin ser admin. El procedimiento
+de abajo sí funciona; el detalle técnico de por qué está en `docs/DEPLOY.md`, sección 6.
+
+1. Crea tu usuario desde el panel de Supabase, **no desde la app**: **Authentication → Users → Add
+   user**, con tu correo real y una contraseña, marcando **Auto Confirm User**.
+2. Vuelve a Supabase → **SQL Editor** → **New query**. Pega esto, **cambiando el correo por el
+   tuyo**:
 
 ```sql
+begin;
+alter table profiles disable trigger guard_profiles;
+
 update profiles
    set app_role = 'admin', active = true
  where id = (select id from auth.users where email = 'tu-correo@ejemplo.com');
+
+alter table profiles enable trigger guard_profiles;
+commit;
 ```
 
-6. Pulsa **Run**.
-7. Vuelve a la aplicación y recarga la página. Ya deberías estar dentro.
+3. Pulsa **Run**.
+4. **No te fíes del mensaje de éxito solo: verifica.** Corre esta consulta aparte:
 
-> **Crea un segundo administrador cuanto antes.** Pídele a otra persona de confianza del equipo que
-> se registre y actívala como `admin` con el mismo comando. Si pierdes el acceso a tu cuenta y eres
-> el único administrador, recuperarlo exige volver al panel de Supabase.
+```sql
+select u.email, p.app_role, p.active
+  from profiles p join auth.users u on u.id = p.id
+ where p.app_role = 'admin' and p.active = true;
+```
+
+   Debe devolver tu fila. Si sale vacía, algo falló — repite desde el paso 1.
+5. Abre la dirección de tu aplicación, inicia sesión con tu correo y contraseña. Ya deberías estar
+   dentro como administrador.
+
+> **Crea un segundo administrador cuanto antes**, repitiendo este mismo procedimiento con su correo
+> (una vez que esa persona se haya registrado, puede ser desde la app). Es la única protección real
+> contra perder el acceso administrativo. Si pierdes el acceso a tu cuenta y eres el único
+> administrador, recuperarlo exige volver al panel de Supabase.
 
 ---
 
@@ -340,7 +367,7 @@ A partir de aquí ya no hace falta tocar Supabase nunca más:
 | La app carga en blanco | `js/config.js` no tiene los datos reales | Revisa la Parte 3.4 |
 | "Invalid API key" | Copiaste la clave incompleta o la equivocada | Vuelve a copiar la clave **anon** entera |
 | El despliegue de Vercel falla | Vercel intentó compilar el proyecto | Deja vacíos los campos de Build (Parte 3.3) |
-| Entro pero no veo nada | Tu perfil sigue inactivo | Ejecuta el comando de la Parte 4.5 |
+| Entro pero no veo nada | Tu perfil sigue inactivo | Repite el procedimiento de la Parte 4 |
 | El correo de recuperación no llega | Falta configurar el Site URL | Revisa la Parte 3.5, y mira en spam |
 | Un archivo `.sql` da error | Los ejecutaste desordenados | Ver `docs/DEPLOY.md`, sección de problemas |
 

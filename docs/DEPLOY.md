@@ -16,14 +16,18 @@ Comprueba que el proyecto está completo:
 
 - [ ] Existe `js/config.js` con la URL y la `anon key` reales.
 - [ ] Existe `js/vendor/supabase.js` y **no** está vacío.
-- [ ] Existen los cinco archivos de `supabase/`.
+- [ ] Existen los seis archivos de `supabase/`.
 - [ ] **No** existen `server.ps1`, `Iniciar_CuidApp.bat`, `js/data.js` ni `js/vitals.js`.
 - [ ] Buscar `service_role` en todo el proyecto **no devuelve nada**.
-- [ ] Buscar `localStorage` en `js/` solo lo encuentra dentro de `vendor/supabase.js`.
+- [ ] `js/config.js` tiene `LOCAL_MODE: false`. Con ese flag en `false` la app usa Supabase; en `true`
+      opera solo en el navegador contra `js/local-store.js`, sin backend. `js/local-store.js` existe
+      en el proyecto y se carga siempre desde `index.html` — es el adaptador que implementa ese modo,
+      no un descuido de `localStorage`.
 
-> **Las dos últimas comprobaciones no son rutina.** Una `service_role key` filtrada da acceso total
-> al expediente del paciente sin contraseña. Un `localStorage` olvidado significa datos que un
-> cuidador guarda y los demás nunca ven.
+> **Las comprobaciones de `service_role` y `LOCAL_MODE` no son rutina.** Una `service_role key`
+> filtrada da acceso total al expediente del paciente sin contraseña. Un `LOCAL_MODE: true` en
+> producción significa que cada cuidador ve solo los datos guardados en su propio dispositivo, y no
+> los del resto del equipo.
 
 ---
 
@@ -59,15 +63,34 @@ En Supabase → **SQL Editor** → **New query**, ejecuta cada archivo **en este
 > **El orden es obligatorio.** Cada archivo usa lo que creó el anterior. Si uno falla, corrígelo
 > antes de seguir: ejecutar el siguiente sobre una base incompleta multiplica los errores.
 
-### Si ejecutaste un archivo dos veces
+### Si un script falla a mitad de camino
 
-No pasa nada grave. `create table` dará "already exists" y `create or replace function` simplemente
-sobrescribe. Los `insert` de `05_seed.sql` podrían duplicar roles: revisa con
-`select name, count(*) from care_roles group by name having count(*) > 1;` y borra los sobrantes.
+**Reintentarlo no es seguro — no lo vuelvas a correr sin más.** El SQL Editor aborta el script
+completo apenas encuentra un error, pero lo que ya se ejecutó antes de esa línea queda aplicado: la
+base se queda a mitad de camino. Y salvo `06_migracion_v1.sql`, ninguno de estos archivos está escrito
+para tolerar una segunda ejecución:
+
+- `01_schema.sql` aborta al segundo intento: el `create type` de la línea 8 y los 25 `create table`
+  del archivo no usan `if not exists`, así que el primero que ya existe corta todo lo que sigue.
+- `04_rls.sql` aborta al segundo intento: seis de sus `create policy` (líneas 34, 40, 46, 51, 53 y 58)
+  no tienen un `drop policy if exists` antes, a diferencia de las que genera el bloque dinámico más
+  arriba en el mismo archivo.
+- `05_seed.sql` **no aborta, pero duplica en silencio**: el `insert` de `care_roles` (líneas 8-15) no
+  tiene `on conflict`, y `name` no es una columna `UNIQUE` — cada reejecución sedimenta 7 filas más.
+- `06_migracion_v1.sql` sí es idempotente: volver a ejecutarlo no duplica nada.
+
+**Si un script que no sea `06_migracion_v1.sql` falla a mitad, no lo reintentes tal cual.** Resetea la
+base completa (ver más abajo) y vuelve a correr la secuencia desde `01_schema.sql`. Solo si estás
+seguro de que el archivo corrió completo y sin error, y únicamente sospechas duplicados en
+`care_roles`, podés limpiarlos con
+`select name, count(*) from care_roles group by name having count(*) > 1;` y borrando los sobrantes.
 
 ### Si necesitas empezar de cero
 
-En el SQL Editor:
+La forma más simple: Supabase → **Settings → Database → Reset database**. Borra todo el esquema
+`public` y lo deja limpio para volver a correr los seis archivos desde `01_schema.sql`.
+
+Alternativa manual, en el SQL Editor:
 
 ```sql
 -- ⚠️ BORRA TODOS LOS DATOS. Sin vuelta atrás.
@@ -77,7 +100,7 @@ grant usage on schema public to anon, authenticated;
 grant all on schema public to postgres, service_role;
 ```
 
-Después vuelve a ejecutar los cinco archivos. **Las cuentas de usuario sobreviven** (viven en el
+Después vuelve a ejecutar los seis archivos. **Las cuentas de usuario sobreviven** (viven en el
 esquema `auth`), pero sus perfiles se pierden: habrá que reactivarlos.
 
 ---
@@ -125,10 +148,16 @@ En Supabase → **Authentication** → **URL Configuration**:
 
 | Campo | Valor |
 |---|---|
-| **Site URL** | `https://tu-app.vercel.app` |
-| **Redirect URLs** | `https://tu-app.vercel.app/**` |
+| **Site URL** | `https://cuid-app-ten.vercel.app` |
+| **Redirect URLs** | agregar `https://cuid-app-ten.vercel.app/**` |
 
-Sin esto, los enlaces de recuperación de contraseña llevan a ninguna parte.
+**Qué depende de esto y qué no.** El login normal (`signInWithPassword`, en `js/auth.js:186`) **no**
+depende de este paso: no redirige a ninguna parte, así que sin configurar esto el inicio de sesión
+sigue funcionando con normalidad. Lo que sí depende de este paso: el alta de cuentas nuevas
+(`signUp`, `js/auth.js:245`), cuyo correo de confirmación apunta a la Site URL, y el reseteo de
+contraseña (`resetPasswordForEmail`, `js/auth.js:327`), que usa `redirectTo: window.location.origin`
+y necesita ese origen en la lista de Redirect URLs. En resumen: sin este paso no se cae el login, se
+caen el alta de usuarios nuevos y el reseteo de contraseña.
 
 ### Si usas un dominio propio
 
@@ -140,21 +169,72 @@ Sin esto, los enlaces de recuperación de contraseña llevan a ninguna parte.
 
 ## 6. Primer administrador
 
-1. Regístrate en la aplicación con tu correo.
-2. Verás la pantalla de cuenta pendiente. Es correcto: todo usuario nace inactivo.
-3. En Supabase → SQL Editor:
+**El `update` de placeholder que trae `05_seed.sql` (líneas 25-27) no puede crear el primer
+administrador.** Tampoco lo logra registrarse primero en la app y correr después un `update` simple
+como el de abajo — es el mismo problema. Hay una causa concreta y un procedimiento que sí funciona.
+
+### Por qué el camino directo no funciona
+
+El trigger `guard_profiles` (`02_functions.sql:57-59`, `before update on profiles`) hace:
 
 ```sql
+if (not is_admin()) or (old.id = auth.uid()) then
+  new.app_role := old.app_role;
+  new.active   := old.active;
+end if;
+```
+
+En el SQL Editor de Supabase no hay sesión JWT: `auth.uid()` es `NULL`, `is_admin()` da `false`, y el
+trigger revierte `app_role` y `active` al valor anterior. Es un candado de arranque: para crear un
+administrador hace falta ya ser administrador.
+
+Y falla **en verde**, sin avisar. El `UPDATE` reporta "1 row affected" con total normalidad, pero
+como el guard dejó la fila idéntica a como estaba, el trigger de auditoría (`03_audit.sql:44-46`)
+decide que no hubo cambios (`cardinality(v_changed) = 0`) y ni siquiera lo registra: no queda ningún
+rastro de que algo pasó.
+
+Además, si el email todavía no existe en `auth.users` — por ejemplo si se corre el `update` de
+`05_seed.sql` con el placeholder `CAMBIAR@EJEMPLO.COM` sin haber creado antes esa cuenta —, la
+subconsulta da `NULL`, el `where id = NULL` no matchea ninguna fila, y el `UPDATE` afecta **0 filas
+sin ningún error**.
+
+### Procedimiento correcto
+
+1. Crea el usuario primero, en el Dashboard: **Authentication → Users → Add user**, con el email real
+   y una contraseña, marcando **Auto Confirm User**. El trigger `on_auth_user_created`
+   (`02_functions.sql:38-41`) le crea automáticamente el perfil con `app_role='caregiver'` y
+   `active=false`.
+2. Recién después, en el SQL Editor, desactiva el guard temporalmente para poder promoverlo:
+
+```sql
+begin;
+alter table profiles disable trigger guard_profiles;
+
 update profiles
    set app_role = 'admin', active = true
- where id = (select id from auth.users where email = 'tu-correo@ejemplo.com');
+ where id = (select id from auth.users where email = 'EMAIL-REAL@dominio.com');
+
+alter table profiles enable trigger guard_profiles;
+commit;
 ```
+
+3. **Gate obligatorio — no lo saltees.** Los dos modos de fallo de arriba son silenciosos, así que
+   hay que confirmar con una consulta aparte:
+
+```sql
+select u.email, p.app_role, p.active
+  from profiles p join auth.users u on u.id = p.id
+ where p.app_role = 'admin' and p.active = true;
+```
+
+   Debe devolver la fila del administrador recién creado. Si devuelve vacío, el bootstrap falló:
+   repite desde el paso 1.
 
 4. Recarga la aplicación.
 
-> **Crea un segundo administrador el mismo día.** Es la única protección real contra perder el
-> acceso administrativo. Con un solo admin, un móvil perdido o un correo inaccesible obligan a
-> volver al panel de Supabase.
+> **Crea un segundo administrador el mismo día**, repitiendo este mismo procedimiento con su email.
+> Es la única protección real contra perder el acceso administrativo. Con un solo admin, un móvil
+> perdido o un correo inaccesible obligan a volver al panel de Supabase.
 
 ---
 
@@ -163,6 +243,11 @@ update profiles
 Hazlo **desde un iPhone real**, que es la plataforma de referencia.
 
 ### 7.1 Seguridad — empieza por aquí
+
+Esta lista comprueba la seguridad real contra Supabase (RLS, auditoría, roles). Todas estas
+comprobaciones dan por hecho que `js/config.js` tiene `LOCAL_MODE: false` — que es el valor actual en
+producción. Con `LOCAL_MODE: true` ninguna aplica: no hay sesión ni RLS que verificar, todo vive en
+el navegador.
 
 - [ ] Abre la app en una ventana privada, **sin iniciar sesión**: no se ve ningún dato del paciente.
 - [ ] Regístrate con un correo de prueba: aparece la pantalla de cuenta pendiente y **ninguna** tabla.

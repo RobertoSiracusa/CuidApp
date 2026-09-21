@@ -2,6 +2,8 @@
 
 **CuidApp** coordina el cuidado domiciliario de un paciente crítico entre familiares, enfermeros, cuidadores y médicos: turnos, administración de dosis de medicamentos, control de insumos e inventario, tareas por turno, agenda médica, alimentación, compras y registro de gastos con auditoría integral.
 
+**Producción:** https://cuid-app-ten.vercel.app/
+
 ---
 
 ## 🛠️ Stack Tecnológico
@@ -23,7 +25,18 @@ Para ejecutar CuidApp en entorno de desarrollo local basta con servir los archiv
    ```bash
    python -m http.server 8000
    ```
-3. Configurar las credenciales de Supabase en `js/config.js`.
+3. `js/config.js` ya viene con las credenciales de Supabase configuradas y versionadas. La clave que
+   contiene es pública por diseño (una `publishable key`, no la `service_role`): lo que protege los
+   datos es la Row Level Security en Supabase, no mantenerla en secreto. No hace falta tocar nada
+   para conectarse al backend real.
+
+### Modo local sin Supabase
+
+`js/config.js` tiene un flag `LOCAL_MODE`. En `true`, la app opera 100% en el navegador y persiste
+los datos en `localStorage` de ese equipo (vía `js/local-store.js`), sin necesitar internet ni una
+cuenta de Supabase — útil para probar la interfaz rápido. En `false` (el valor actual en el
+repositorio), la app se conecta a Supabase en la nube con las credenciales indicadas en el mismo
+archivo.
 
 ---
 
@@ -33,3 +46,13 @@ Para ejecutar CuidApp en entorno de desarrollo local basta con servir los archiv
 - [Plan de Desarrollo](docs/PLAN-DESARROLLO.md)
 - [Tutorial de Cuentas y Roles](docs/TUTORIAL-CUENTAS.md)
 - [Guía de Despliegue en Vercel y Supabase](docs/DEPLOY.md)
+
+---
+
+## Créditos
+
+El código de CuidApp fue desarrollado por un familiar, en buena medida asistido por IA.
+
+Roberto Siracusa se encargó únicamente del despliegue: configuración del proyecto en
+Supabase, conexión de la aplicación al backend y publicación en Vercel. No participó
+del desarrollo de la aplicación.
