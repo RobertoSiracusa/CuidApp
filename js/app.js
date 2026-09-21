@@ -418,6 +418,11 @@ const App = (() => {
 
   // ─── Arranque de la Aplicación ────────────────────────────
   const init = async () => {
+    // Cablear los listeners de Ui: botones de los modales y del dialogo de
+    // confirmacion. Sin esta llamada los 18 Ui.confirm de la app abren un
+    // dialogo cuyos botones Confirmar y Cancelar no tienen handler.
+    Ui.init();
+
     // Configurar listeners de navegación inferior
     document.querySelectorAll('.nav-btn').forEach(btn => {
       btn.addEventListener('click', () => {
