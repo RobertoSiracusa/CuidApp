@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="CuidApp — Coordinación de cuidados para paciente crítico en casa. Turnos, administración de dosis, stock, agenda médica y tareas.">
+  <meta name="theme-color" content="#080d17">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CuidApp">
+  <title>CuidApp — Cuidados en Casa</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<!-- Franja de estado sin conexión (RNF-05) -->
+<div id="offline-banner" class="offline-banner hidden" role="status">
+  ⚠️ Sin conexión. No se pueden guardar cambios.
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     PANTALLA DE AUTENTICACIÓN (RF-01, RF-02, RF-05)
+     ════════════════════════════════════════════ -->
+<div id="auth-screen" class="fullscreen-screen">
+  <div class="auth-logo">🏥</div>
+  <h1 class="auth-title">CuidApp</h1>
+  <p class="auth-subtitle">Coordinación de Cuidados Domiciliarios</p>
+
+  <div class="auth-card">
+    <!-- Pestañas de Login / Registro -->
+    <div class="auth-tabs" role="tablist">
+      <button id="tab-login-btn" class="auth-tab-btn active" role="tab" aria-selected="true">Entrar</button>
+      <button id="tab-register-btn" class="auth-tab-btn" role="tab" aria-selected="false">Crear cuenta</button>
+    </div>
+
+    <!-- Alertas de error y éxito -->
+    <div id="auth-error-box" class="auth-error" role="alert"></div>
+    <div id="auth-success-box" class="auth-success" role="status"></div>
+
+    <!-- Formulario de Iniciar Sesión -->
+    <form id="auth-form-login">
+      <div class="form-group">
+        <label class="form-label" for="login-email">Correo electrónico</label>
+        <input type="email" id="login-email" class="form-input" autocomplete="email" required placeholder="tu@correo.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="login-password">Contraseña</label>
+        <input type="password" id="login-password" class="form-input" autocomplete="current-password" required placeholder="Tu contraseña">
+      </div>
+      <button type="submit" id="login-submit-btn" class="btn btn-primary btn-full btn-lg" style="margin-top:var(--sp-2);">
+        Iniciar Sesión
+      </button>
+      <div class="auth-links">
+        <button type="button" id="forgot-password-link" class="auth-link-btn">¿Olvidaste tu contraseña?</button>
+      </div>
+    </form>
+
+    <!-- Formulario de Registro -->
+    <form id="auth-form-register" class="hidden">
+      <div class="form-group">
+        <label class="form-label" for="reg-name">Nombre y Apellido</label>
+        <input type="text" id="reg-name" class="form-input" autocomplete="name" required placeholder="Ej. María González">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="reg-email">Correo electrónico</label>
+        <input type="email" id="reg-email" class="form-input" autocomplete="email" required placeholder="tu@correo.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="reg-password">Contraseña</label>
+        <input type="password" id="reg-password" class="form-input" autocomplete="new-password" required minlength="6" placeholder="Mínimo 6 caracteres">
+      </div>
+      <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:var(--sp-4); line-height:1.4;">
+        ℹ️ Tu cuenta quedará inactiva hasta que un administrador del equipo la apruebe.
+      </div>
+      <button type="submit" id="reg-submit-btn" class="btn btn-primary btn-full btn-lg">
+        Crear Cuenta
+      </button>
+    </form>
+
+    <!-- Formulario de Recuperación de Contraseña -->
+    <form id="auth-form-reset" class="hidden">
+      <div style="font-size:0.875rem; color:var(--text-sec); margin-bottom:var(--sp-4); line-height:1.5;">
+        Introduce tu correo electrónico y te enviaremos un enlace seguro para restablecer tu contraseña.
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="reset-email">Correo electrónico</label>
+        <input type="email" id="reset-email" class="form-input" autocomplete="email" required placeholder="tu@correo.com">
+      </div>
+      <button type="submit" id="reset-submit-btn" class="btn btn-primary btn-full btn-lg" style="margin-top:var(--sp-2);">
+        Enviar enlace
+      </button>
+      <div class="auth-links">
+        <button type="button" id="back-to-login-link" class="auth-link-btn">Volver a iniciar sesión</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════
+     PANTALLA DE CUENTA PENDIENTE (RF-06)
+     ════════════════════════════════════════════ -->
+<div id="pending-screen" class="fullscreen-screen hidden">
+  <div class="auth-card" style="text-align:center; padding:var(--sp-8) var(--sp-6);">
+    <div style="font-size:3.5rem; margin-bottom:var(--sp-3);">⏳</div>
+    <h2 style="font-size:1.375rem; font-weight:700; margin-bottom:var(--sp-3); color:var(--text);">
+      Cuenta pendiente de aprobación
+    </h2>
+    <p style="font-size:0.9375rem; color:var(--text-sec); line-height:1.6; margin-bottom:var(--sp-5);">
+      Tu cuenta ha sido creada correctamente, pero aún no está activa.<br>
+      Pide a un <strong>administrador</strong> de CuidApp que apruebe tu acceso para comenzar.
+    </p>
+
+    <div style="background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--r-md); padding:var(--sp-3); margin-bottom:var(--sp-6);">
+      <div style="font-size:0.75rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:2px;">Sesión actual</div>
+      <div id="pending-user-email" style="font-weight:600; font-size:0.9375rem; color:var(--text);">—</div>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:var(--sp-3);">
+      <button type="button" id="pending-check-btn" class="btn btn-primary btn-full btn-lg">
+        🔄 Comprobar aprobación
+      </button>
+      <button type="button" id="pending-logout-btn" class="btn btn-secondary btn-full">
+        Cerrar sesión
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     APP PRINCIPAL
+     ════════════════════════════════════════════ -->
+<div id="app" class="hidden">
+
+  <!-- ── HEADER ─────────────────────────────────── -->
+  <header id="app-header" role="banner">
+    <div class="hdr-left">
+      <span id="hdr-status-badge" class="status-badge stable">
+        <span class="status-dot pulse"></span>🟢
+      </span>
+      <span id="patient-name-hdr">Paciente</span>
+    </div>
+    <div class="hdr-center">CuidApp</div>
+    <div class="hdr-right" style="display:flex;gap:4px;align-items:center;">
+      <!-- Direct Food Menu button in header -->
+      <button id="hdr-food-btn" class="btn btn-icon" aria-label="Menú de Comidas" title="Ver Menú del Día y Planificador" onclick="App.navigateTo('food')">
+        🍽️
+      </button>
+      <!-- Quick backup button -->
+      <button id="quick-backup-btn" class="btn btn-icon" aria-label="Guardar copia en archivo" title="Descargar copia de seguridad (.json)" onclick="App.exportData()">
+        💾
+      </button>
+      <!-- Notification button -->
+      <button id="notif-btn" class="btn btn-icon" aria-label="Notificaciones" title="Notificaciones">
+        🔔
+        <span id="notif-count" aria-live="polite"></span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── NOTIFICATIONS PANEL ────────────────────── -->
+  <div id="notif-panel" role="region" aria-label="Notificaciones">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border);">
+      <div style="font-weight:700;">🔔 Notificaciones</div>
+      <button id="notif-clear-btn" class="btn btn-ghost btn-sm">Limpiar</button>
+    </div>
+    <div id="notif-list">
+      <!-- Populated by notifications.js -->
+    </div>
+  </div>
+
+
+  <!-- ── MAIN CONTENT ───────────────────────────── -->
+  <main id="main-content" role="main">
+
+    <!-- 🏥 Dashboard -->
+    <section id="panel-dashboard" class="panel" role="region" aria-label="Panel de inicio"></section>
+
+    <!-- 💊 Administración de Dosis (NUEVO) -->
+    <section id="panel-administration" class="panel" role="region" aria-label="Dosis del día"></section>
+
+    <!-- 📋 Tareas -->
+    <section id="panel-tasks" class="panel" role="region" aria-label="Tareas diarias"></section>
+
+    <!-- 📦 Inventario -->
+    <section id="panel-inventory" class="panel" role="region" aria-label="Inventario y stock"></section>
+
+    <!-- 💊 Medicamentos (catálogo y reposición) -->
+    <section id="panel-medications" class="panel" role="region" aria-label="Catálogo de medicamentos"></section>
+
+    <!-- 👥 Roles y Personal -->
+    <section id="panel-roles" class="panel" role="region" aria-label="Roles y personal"></section>
+
+    <!-- 📅 Agenda Médica -->
+    <section id="panel-agenda" class="panel" role="region" aria-label="Agenda médica"></section>
+
+    <!-- 🍽️ Alimentación y Compras -->
+    <section id="panel-food" class="panel" role="region" aria-label="Alimentación y compras"></section>
+
+    <!-- 💰 Gastos -->
+    <section id="panel-expenses" class="panel" role="region" aria-label="Gastos"></section>
+
+    <!-- 🔍 Auditoría (solo admin) -->
+    <section id="panel-audit" class="panel" role="region" aria-label="Registro de auditoría"></section>
+
+    <!-- ⚙️ Configuración -->
+    <section id="panel-settings" class="panel" role="region" aria-label="Configuración"></section>
+
+  </main><!-- /main-content -->
+
+
+  <!-- ── BOTTOM NAV (5 posiciones directas: Inicio, Menú, Dosis, Tareas, Más) ── -->
+  <nav id="bottom-nav" role="navigation" aria-label="Navegación principal">
+    <button class="nav-btn" data-panel="dashboard" aria-label="Inicio">
+      <span class="nav-icon">🏥</span>
+      <span class="nav-label">Inicio</span>
+      <span class="nav-badge-dot" data-for="dashboard"></span>
+    </button>
+    <button class="nav-btn" data-panel="food" aria-label="Menú">
+      <span class="nav-icon">🍽️</span>
+      <span class="nav-label">Menú</span>
+    </button>
+    <button class="nav-btn" data-panel="administration" aria-label="Dosis">
+      <span class="nav-icon">💊</span>
+      <span class="nav-label">Dosis</span>
+    </button>
+    <button class="nav-btn" data-panel="tasks" aria-label="Tareas">
+      <span class="nav-icon">📋</span>
+      <span class="nav-label">Tareas</span>
+    </button>
+    <button class="nav-btn" data-panel="more" aria-label="Más opciones">
+      <span class="nav-icon">⋯</span>
+      <span class="nav-label">Más</span>
+    </button>
+  </nav>
+
+</div><!-- /app -->
+
+
+<!-- ═══════════════════════════════════════════════
+     MENÚ "MÁS" (slide-up)
+     ════════════════════════════════════════════ -->
+<div id="more-menu-overlay" aria-hidden="true"></div>
+<div id="more-menu" role="dialog" aria-label="Más opciones">
+  <div class="modal-handle"></div>
+  <div class="card-title" style="margin-bottom:12px;">MÁS MÓDULOS</div>
+  <div class="more-menu-grid">
+    <div class="more-item" data-panel="food" role="button" tabindex="0">
+      <span class="more-icon">🍽️</span>
+      <span class="more-label">Menús y Comidas</span>
+    </div>
+    <div class="more-item" data-panel="inventory" role="button" tabindex="0">
+      <span class="more-icon">📦</span>
+      <span class="more-label">Stock e Insumos</span>
+    </div>
+    <div class="more-item" data-panel="medications" role="button" tabindex="0">
+      <span class="more-icon">💊</span>
+      <span class="more-label">Medicamentos</span>
+    </div>
+    <div class="more-item" data-panel="roles" role="button" tabindex="0">
+      <span class="more-icon">👥</span>
+      <span class="more-label">Roles y Personal</span>
+    </div>
+    <div class="more-item" data-panel="agenda" role="button" tabindex="0">
+      <span class="more-icon">📅</span>
+      <span class="more-label">Agenda Médica</span>
+    </div>
+    <div class="more-item" data-panel="expenses" role="button" tabindex="0">
+      <span class="more-icon">💰</span>
+      <span class="more-label">Gastos</span>
+    </div>
+    <div class="more-item" data-panel="settings" role="button" tabindex="0">
+      <span class="more-icon">⚙️</span>
+      <span class="more-label">Configuración</span>
+    </div>
+    <div class="more-item" id="more-item-audit" data-panel="audit" role="button" tabindex="0">
+      <span class="more-icon">🔍</span>
+      <span class="more-label">Auditoría</span>
+    </div>
+    <div class="more-item" onclick="App.exportData(); App.closeMoreMenu();" role="button" tabindex="0">
+      <span class="more-icon">💾</span>
+      <span class="more-label">Guardar Copia</span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     MODAL UNIVERSAL
+     ════════════════════════════════════════════ -->
+<div id="modal-overlay" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div id="modal-title" class="modal-title">Modal</div>
+    <div id="modal-body">
+      <!-- Dynamic content -->
+    </div>
+    <div class="modal-actions">
+      <button id="modal-cancel-btn"  class="btn btn-secondary">Cancelar</button>
+      <button id="modal-confirm-btn" class="btn btn-primary">Guardar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     CONFIRM DIALOG
+     ════════════════════════════════════════════ -->
+<div id="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title-el">
+  <div class="confirm-card">
+    <div class="confirm-title" id="confirm-title-el">¿Estás seguro?</div>
+    <div class="confirm-msg">Esta acción no se puede deshacer.</div>
+    <div class="confirm-btns">
+      <button id="confirm-cancel-btn" class="btn btn-secondary">Cancelar</button>
+      <button id="confirm-ok-btn"     class="btn btn-danger">Eliminar</button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     BOTÓN DE EMERGENCIA (FAB)
+     ════════════════════════════════════════════ -->
+<button id="emergency-fab" aria-label="Llamar emergencia" title="Emergencia">
+  🆘
+</button>
+
+
+<!-- ═══════════════════════════════════════════════
+     MODAL DE EMERGENCIA
+     ════════════════════════════════════════════ -->
+<div id="emergency-modal" role="alertdialog" aria-modal="true" aria-labelledby="emg-title">
+  <div class="emg-card">
+    <div class="emg-icon">🆘</div>
+    <div class="emg-title" id="emg-title">EMERGENCIA</div>
+    <div class="emg-name" id="emg-contact-name">Médico de guardia</div>
+    <div class="emg-actions">
+      <a id="emg-call-btn" href="tel:" class="emg-btn call">
+        📞 Llamar ahora
+      </a>
+      <a id="emg-wa-btn" href="https://wa.me/" target="_blank" class="emg-btn whatsapp">
+        💬 WhatsApp
+      </a>
+      <button id="emg-dismiss-btn" class="emg-btn dismiss">
+        ✕ Cerrar
+      </button>
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     MODO "¿QUÉ HAGO AHORA?"
+     ════════════════════════════════════════════ -->
+<div id="whatnow-overlay" role="dialog" aria-modal="true" aria-label="Guía de turno">
+  <div class="wn-title">💡 ¿Qué hago ahora?</div>
+  <div class="wn-sub">Tareas pendientes de tu turno</div>
+
+  <div id="wn-task-list" style="width:100%;max-width:360px;">
+    <!-- Populated by app.js -->
+  </div>
+
+  <div class="wn-nav" style="margin-top:8px;">
+    <button id="wn-close-btn" class="btn btn-secondary">
+      ✕ Cerrar guía
+    </button>
+    <button class="btn btn-primary" onclick="App.navigateTo('tasks');App.closeWhatNow();">
+      Ver todas las tareas
+    </button>
+  </div>
+
+  <div style="margin-top:24px;text-align:center;">
+    <div style="font-size:.75rem;color:var(--text-muted);">
+      Toca una tarea en el módulo de Tareas<br>para marcarla como completada
+    </div>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     TOAST CONTAINER
+     ════════════════════════════════════════════ -->
+<div id="toast-container" aria-live="polite" aria-atomic="false">
+  <!-- Toasts added dynamically -->
+</div>
+
+
+<!-- ═══════════════════════════════════════════════
+     SCRIPTS (orden de dependencias)
+     ════════════════════════════════════════════ -->
+<script src="js/vendor/supabase.js"></script>
+<script src="js/config.js"></script>
+<script src="js/local-store.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/api.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/dashboard.js"></script>
+<script src="js/roles.js"></script>
+<script src="js/medications.js"></script>
+<script src="js/administration.js"></script>
+<script src="js/inventory.js"></script>
+<script src="js/tasks.js"></script>
+<script src="js/agenda.js"></script>
+<script src="js/food.js"></script>
+<script src="js/expenses.js"></script>
+<script src="js/settings.js"></script>
+<script src="js/audit.js"></script>
+<script src="js/app.js"></script>
+
+
+</body>
+</html>
