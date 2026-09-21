@@ -135,7 +135,9 @@ const Api = (() => {
       return val;
     }
     if (typeof val === 'object') {
-      if (val.ok !== undefined && val.data !== undefined) return val;
+      // Si ya trae el contrato ok (con o sin data, p.ej. {ok:false,error:'x'})
+      // se respeta tal cual: no pisar un error convirtiéndolo en éxito.
+      if (val.ok !== undefined) return val;
       val.data = val;
       val.ok = true;
       return val;
@@ -3111,7 +3113,17 @@ const Api = (() => {
           return wrap(res);
         };
       }
-      return Reflect.get(target, prop, receiver);
+      const val = Reflect.get(target, prop, receiver);
+      if (typeof val !== 'function') return val;
+      return (...args) => {
+        const res = val.apply(target, args);
+        // wrap sólo si el retorno es una Promise: hay helpers síncronos
+        // (escapeHtml, todayStr, timeAgo, formatDate, formatDateShort,
+        // formatDateTime, shiftDuration, currency) que se usan dentro de
+        // template strings y no pueden volverse async sin romper las vistas.
+        if (res && typeof res.then === 'function') return res.then(wrap);
+        return res;
+      };
     }
   });
 })();
