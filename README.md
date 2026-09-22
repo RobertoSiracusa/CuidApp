@@ -6,7 +6,7 @@
 
 ---
 
-## 🛠️ Stack Tecnológico
+##  Stack Tecnológico
 
 - **Frontend:** HTML5 + CSS3 (diseño optimizado para Safari en iOS) + JavaScript modular (IIFE).
 - **Sin paso de build:** Sin frameworks (React, Vue, etc.), sin `npm`, sin bundlers ni `package.json`.
@@ -16,7 +16,7 @@
 
 ---
 
-## 🚀 Ejecución en Local
+##  Ejecución en Local
 
 Para ejecutar CuidApp en entorno de desarrollo local basta con servir los archivos mediante cualquier servidor estático:
 
@@ -40,7 +40,7 @@ archivo.
 
 ---
 
-## 📚 Documentación
+##  Documentación
 
 - [Especificación de Requisitos (SRS v2.0)](docs/ESPECIFICACION-REQUISITOS.md)
 - [Plan de Desarrollo](docs/PLAN-DESARROLLO.md)
