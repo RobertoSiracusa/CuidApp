@@ -3,7 +3,7 @@
 **Versión del documento:** 2.0
 **Fecha:** 2026-09-21
 **Sustituye a:** v1.0 (ingeniería inversa sobre el prototipo local)
-**Estado del producto:** rediseño para web pública — pendiente de implementación
+**Estado del producto:** rediseño para web pública — implementación completada, en fase de verificación y pruebas
 
 > **Qué cambió respecto a v1.0**
 > v1.0 documentaba un prototipo que corría en **un solo equipo Windows** (servidor PowerShell en
