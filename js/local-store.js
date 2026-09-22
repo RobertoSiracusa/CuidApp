@@ -308,6 +308,12 @@ const LocalStore = (() => {
           createdAt: '2026-09-21T15:37:45.169Z'
         }
       ],
+      complementoCategories: [
+        { id: 'bebidas', label: 'Bebidas', icon: '🥤', isCustom: false },
+        { id: 'contornos', label: 'Contornos', icon: '🥗', isCustom: false },
+        { id: 'snacks', label: 'Snacks', icon: '🍎', isCustom: false }
+      ],
+      availableComplementos: [],
       complementoIngredients: [],
       shoppingList: [],
       expenses: [
@@ -370,7 +376,7 @@ const LocalStore = (() => {
       'careRoles', 'profiles', 'inventoryCategories', 'inventoryItems', 'inventoryMovements',
       'medications', 'medicationSchedules', 'medicationAdministrations', 'medicationRestocks',
       'taskTemplates', 'tasks', 'taskComments', 'appointments', 'recipes', 'recipeIngredients',
-      'weeklyPlan', 'complementos', 'complementoIngredients', 'shoppingList', 'expenses',
+      'weeklyPlan', 'complementos', 'complementoIngredients', 'complementoCategories', 'availableComplementos', 'shoppingList', 'expenses',
       'shifts', 'shiftNotes', 'auditLog'
     ];
 
@@ -454,6 +460,18 @@ const LocalStore = (() => {
       data.complementos.forEach(c => {
         if (LEGACY_ID_MAP[c.id]) c.id = LEGACY_ID_MAP[c.id];
       });
+    }
+
+    // 4. Reconciliar categorias de complementos
+    if (!data.complementoCategories || data.complementoCategories.length === 0) {
+      data.complementoCategories = [
+        { id: 'bebidas', label: 'Bebidas', icon: '🥤', isCustom: false },
+        { id: 'contornos', label: 'Contornos', icon: '🥗', isCustom: false },
+        { id: 'snacks', label: 'Snacks', icon: '🍎', isCustom: false }
+      ];
+    }
+    if (!Array.isArray(data.availableComplementos)) {
+      data.availableComplementos = [];
     }
 
     if (!data._meta) data._meta = {};

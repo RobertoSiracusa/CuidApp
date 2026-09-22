@@ -1600,3 +1600,257 @@ button, .btn, .nav-btn, .chip, .task-check, .inv-step-btn, .shop-check, .more-it
   -webkit-backdrop-filter: blur(16px);
           backdrop-filter: blur(16px);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   SECCIÓN MENÚ — 4 PESTAÑAS (Recetas, Planificación, Complementos, Compras)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Scrollbars accesibles */
+.accessible-scroll {
+  max-height: 460px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--accent) rgba(255, 255, 255, 0.05);
+  padding-right: 6px;
+}
+.accessible-scroll::-webkit-scrollbar {
+  width: 7px;
+}
+.accessible-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 4px;
+}
+.accessible-scroll::-webkit-scrollbar-thumb {
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+/* Navegación semanal del planificador */
+.week-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.week-indicator-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.week-indicator-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.week-indicator-sub {
+  font-size: 0.72rem;
+  color: var(--text-sec);
+  text-transform: capitalize;
+}
+
+/* Tabla del Planificador Semanal */
+.planner-table-container {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-bottom: 16px;
+  background: rgba(13, 20, 36, 0.6);
+}
+.planner-grid-table {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
+}
+.planner-grid-table th {
+  background: var(--bg-elevated);
+  padding: 8px 6px;
+  border: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--text-sec);
+}
+.planner-grid-table th.today-col {
+  color: var(--accent);
+  background: rgba(56, 178, 168, 0.12);
+  border-color: var(--accent-border);
+}
+.planner-grid-table td {
+  border: 1px solid var(--border);
+  padding: 5px;
+  vertical-align: top;
+  min-width: 90px;
+}
+.planner-meal-hdr {
+  font-weight: 800;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 8px;
+}
+.planner-cell-box {
+  min-height: 56px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+  border-radius: var(--r-sm);
+  padding: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px dashed transparent;
+}
+.planner-cell-box:hover {
+  background: rgba(56, 178, 168, 0.08);
+  border-color: var(--accent-border);
+}
+.planner-cell-box.empty {
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+.planner-recipe-tag {
+  background: rgba(56, 178, 168, 0.16);
+  border: 1px solid rgba(56, 178, 168, 0.35);
+  color: var(--text);
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  line-height: 1.25;
+}
+.planner-recipe-tag .rm-tag-btn {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.planner-recipe-tag .rm-tag-btn:hover {
+  color: var(--critical);
+}
+
+/* Sección Complementos Disponibles */
+.available-comps-card {
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  margin-top: 14px;
+  margin-bottom: 18px;
+}
+.available-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.available-chip {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-full);
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.available-chip .rm-chip-btn {
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+.available-chip .rm-chip-btn:hover {
+  color: var(--critical);
+}
+
+/* Modal preliminar de lista de compras */
+.prelim-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: pointer;
+  transition: background 0.15s ease;
+  border-radius: var(--r-sm);
+}
+.prelim-item-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+.prelim-item-row.unselected {
+  opacity: 0.45;
+}
+.prelim-origin-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: 6px;
+}
+
+/* Pestaña Complementos */
+.comp-category-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 8px;
+}
+.comp-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
+/* Pestaña Compras definitiva */
+.shop-item-v2 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--bg-glass);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  margin-bottom: 6px;
+  gap: 10px;
+  transition: all 0.15s ease;
+}
+.shop-item-v2.checked {
+  opacity: 0.45;
+  background: rgba(255, 255, 255, 0.01);
+}
+.shop-item-v2.checked .shop-item-title {
+  text-decoration: line-through;
+}
+

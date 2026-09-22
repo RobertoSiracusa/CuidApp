@@ -31,7 +31,8 @@ const DashboardModule = (() => {
         notesRes,
         alertsRes,
         planRes,
-        recipesRes
+        recipesRes,
+        shoppingRes
       ] = await Promise.all([
         Api.getPatientStatus(),
         Api.getSettings(),
@@ -45,7 +46,8 @@ const DashboardModule = (() => {
         Api.getShiftNotes({ limit: 5 }),
         Api.getActiveAlerts(),
         Api.getWeeklyPlan(),
-        Api.getRecipes()
+        Api.getRecipes(),
+        Api.getShoppingList()
       ]);
 
       const status = statusRes.data || { status: 'stable', notes: '' };
@@ -61,19 +63,21 @@ const DashboardModule = (() => {
       const alerts = alertsRes || [];
       const plan = Array.isArray(planRes?.data || planRes) ? (planRes?.data || planRes) : [];
       const recipes = recipesRes?.data || [];
+      const shopping = shoppingRes?.data || [];
+      const pendingShoppingCount = shopping.filter(i => !i.checked).length;
 
       // Menú de hoy (RF-74)
       const now = new Date();
       const recipeMap = new Map(recipes.map(r => [r.id, r]));
       const todayDayOfWeek = now.getDay();
       const mealTypes = [
-        { id: 'breakfast', label: 'Desayuno', icon: '🌅' },
-        { id: 'lunch',     label: 'Almuerzo', icon: '🍽️' },
-        { id: 'dinner',    label: 'Cena',     icon: '🌙' }
+        { id: 'desayuno', legacyId: 'breakfast', label: 'Desayuno', icon: '🌅' },
+        { id: 'almuerzo', legacyId: 'lunch',     label: 'Almuerzo', icon: '🍽️' },
+        { id: 'cena',     legacyId: 'dinner',    label: 'Cena',     icon: '🌙' }
       ];
       const todayMeals = [];
       mealTypes.forEach(mt => {
-        const slot = plan.find(s => (Number(s.dayOfWeek) === todayDayOfWeek || Number(s.dayIndex) === todayDayOfWeek) && s.mealType === mt.id);
+        const slot = plan.find(s => (Number(s.dayOfWeek) === todayDayOfWeek || Number(s.dayIndex) === todayDayOfWeek) && (s.mealType === mt.id || s.mealType === mt.legacyId));
         const rNames = (slot?.recipeIds || []).map(id => recipeMap.get(id)?.name).filter(Boolean);
         if (rNames.length > 0) {
           todayMeals.push({
@@ -265,10 +269,10 @@ const DashboardModule = (() => {
         </div>
 
         <!-- Menú de Hoy (RF-74: Prominente en Inicio) -->
-        <div class="card" style="margin-bottom:16px;cursor:pointer;background:var(--bg-glass);border-left:3px solid var(--accent);" onclick="App.navigateTo('food')">
+        <div class="card" style="margin-bottom:16px;cursor:pointer;background:var(--bg-glass);border-left:3px solid var(--accent);" onclick="App.navigateTo('food', 'planificacion')">
           <div class="flex items-center justify-between" style="margin-bottom:8px;">
             <div class="card-title" style="margin-bottom:0;">🍽️ MENÚ DE HOY</div>
-            <span class="btn btn-ghost btn-xs text-accent">Ver menú completo →</span>
+            <span class="btn btn-ghost btn-xs text-accent">Ver planificación →</span>
           </div>
           ${todayMeals.length > 0 ? `
             <div style="display:flex;flex-direction:column;gap:6px;">
@@ -286,6 +290,24 @@ const DashboardModule = (() => {
               🔄 Cargar Menús de la Semana
             </button>
           `}
+        </div>
+
+        <!-- Lista de compra (Siempre visible: pendientes o cero pendientes) -->
+        <div class="card" style="margin-bottom:16px;cursor:pointer;background:var(--bg-glass);border-left:3px solid ${pendingShoppingCount > 0 ? 'var(--primary)' : 'var(--stable)'};" onclick="App.navigateTo('food', 'compras')">
+          <div class="flex items-center justify-between">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:1.6rem;">🛒</span>
+              <div>
+                <div class="card-title" style="margin-bottom:2px;font-size:0.8rem;">LISTA DE COMPRA</div>
+                <div class="font-bold text-sm" style="color:${pendingShoppingCount > 0 ? 'var(--text)' : 'var(--stable)'};">
+                  ${pendingShoppingCount > 0
+                    ? `${pendingShoppingCount} ingrediente${pendingShoppingCount === 1 ? '' : 's'} pendiente${pendingShoppingCount === 1 ? '' : 's'} por comprar`
+                    : '0 pendientes · Lista de compra al día'}
+                </div>
+              </div>
+            </div>
+            <span class="btn btn-ghost btn-xs text-primary">Ver compras →</span>
+          </div>
         </div>
 
         <!-- Progreso del día (RF-17) -->
@@ -372,7 +394,7 @@ const DashboardModule = (() => {
             <div class="font-bold text-sm">Agenda médica</div>
             <div class="text-xs text-muted">Citas y preparaciones</div>
           </button>
-          <button class="card" style="cursor:pointer;text-align:left;background:var(--bg-glass);" onclick="App.navigateTo('food')">
+          <button class="card" style="cursor:pointer;text-align:left;background:var(--bg-glass);" onclick="App.navigateTo('food', 'planificacion')">
             <div style="font-size:1.25rem;margin-bottom:4px;">🍽️</div>
             <div class="font-bold text-sm">Menú del día</div>
             <div class="text-xs text-muted">${todayMeals.length > 0 ? Api.escapeHtml(todayMeals[0].label + ': ' + todayMeals[0].text) : 'Plan de alimentación'}</div>

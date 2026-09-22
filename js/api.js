@@ -1014,10 +1014,14 @@ const Api = (() => {
       return { ok: true };
     },
 
-    getWeeklyPlan: async () => {
+    getWeeklyPlan: async (weekKey) => {
       const rows = LocalStore.getCollection('weeklyPlan') || [];
+      const filteredRows = weekKey
+        ? rows.filter(r => (r.weekKey === weekKey || (!r.weekKey && weekKey === 'current')))
+        : rows;
+
       const slotMap = new Map();
-      rows.forEach(row => {
+      filteredRows.forEach(row => {
         const d = Number(row.dayIndex !== undefined ? row.dayIndex : row.day_index);
         const m = row.mealType || row.meal_type;
         const rid = row.recipeId || row.recipe_id;
@@ -1037,7 +1041,7 @@ const Api = (() => {
 
       const slotsArray = Array.from(slotMap.values());
       // Mantener compatibilidad si se accede por plan[d][m]
-      rows.forEach(row => {
+      filteredRows.forEach(row => {
         const d = Number(row.dayIndex !== undefined ? row.dayIndex : row.day_index);
         const m = row.mealType || row.meal_type;
         const rid = row.recipeId || row.recipe_id;
@@ -1050,10 +1054,14 @@ const Api = (() => {
       return slotsArray;
     },
 
-    setMealInPlan: async (dayIndex, mealType, recipeIds) => {
+    setMealInPlan: async (dayIndex, mealType, recipeIds, weekKey) => {
       const plan = LocalStore.getCollection('weeklyPlan');
       const numDay = Number(dayIndex);
-      const remaining = plan.filter(r => !( Number(r.dayIndex !== undefined ? r.dayIndex : r.day_index) === numDay && (r.mealType === mealType || r.meal_type === mealType) ));
+      const remaining = plan.filter(r => !(
+        Number(r.dayIndex !== undefined ? r.dayIndex : r.day_index) === numDay &&
+        (r.mealType === mealType || r.meal_type === mealType) &&
+        (weekKey ? (r.weekKey === weekKey || (!r.weekKey && weekKey === 'current')) : true)
+      ));
       plan.length = 0;
       plan.push(...remaining);
       if (recipeIds && recipeIds.length > 0) {
@@ -1061,8 +1069,10 @@ const Api = (() => {
           plan.push({
             id: LocalStore.uuid(),
             dayIndex: numDay,
+            dayOfWeek: numDay,
             mealType,
-            recipeId: rid
+            recipeId: rid,
+            weekKey: weekKey || null
           });
         });
       }
@@ -1173,27 +1183,79 @@ const Api = (() => {
       return { ok: true };
     },
 
+    // Categorías de Complementos
+    getComplementCategories: async () => {
+      const cats = LocalStore.getCollection('complementoCategories') || [];
+      return cats;
+    },
+
+    addComplementCategory: async ({ label, icon = '🧺' }) => {
+      const cats = LocalStore.getCollection('complementoCategories');
+      const id = 'cat_' + Date.now();
+      const newCat = {
+        id,
+        label: label.trim(),
+        icon: icon || '🧺',
+        isCustom: true
+      };
+      LocalStore.insert('complementoCategories', newCat);
+      return { ok: true, data: newCat };
+    },
+
+    updateComplementCategory: async (id, { label, icon }) => {
+      const payload = {};
+      if (label !== undefined) payload.label = label.trim();
+      if (icon !== undefined) payload.icon = icon;
+      LocalStore.update('complementoCategories', id, payload);
+      return { ok: true };
+    },
+
+    deleteComplementCategory: async (id) => {
+      LocalStore.remove('complementoCategories', id);
+      return { ok: true };
+    },
+
+    // Complementos disponibles en planificador
+    getAvailableComplementos: async () => {
+      return LocalStore.getCollection('availableComplementos') || [];
+    },
+
+    setAvailableComplementos: async (ids) => {
+      const list = LocalStore.getCollection('availableComplementos');
+      list.length = 0;
+      if (Array.isArray(ids)) {
+        list.push(...ids);
+      }
+      LocalStore.save();
+      return { ok: true, data: list };
+    },
+
+    // Lista de Compras
     getShoppingList: async () => {
       const list = [...(LocalStore.getCollection('shoppingList') || [])];
       list.sort((a, b) => (Number(a.checked) - Number(b.checked)));
       return list.map(s => ({
         id: s.id,
         name: s.name,
+        origins: Array.isArray(s.origins) ? s.origins : (s.origins ? [s.origins] : []),
         amount: s.amount || '',
         unit: s.unit || '',
         source: s.source || 'manual',
+        weekKey: s.weekKey || null,
         checked: !!s.checked,
         createdAt: s.createdAt
       }));
     },
 
-    addShoppingItem: async ({ name, amount = '', unit = '', source = 'manual' }) => {
+    addShoppingItem: async ({ name, origins = [], amount = '', unit = '', source = 'manual', weekKey = null }) => {
       const item = {
         id: LocalStore.uuid(),
         name: name.trim(),
+        origins: Array.isArray(origins) ? origins : (origins ? [origins] : []),
         amount: String(amount),
         unit: String(unit),
         source,
+        weekKey,
         checked: false,
         createdAt: nowISO()
       };
@@ -1204,6 +1266,7 @@ const Api = (() => {
     updateShoppingItem: async (id, updates) => {
       const payload = {};
       if (updates.name !== undefined) payload.name = updates.name.trim();
+      if (updates.origins !== undefined) payload.origins = updates.origins;
       if (updates.amount !== undefined) payload.amount = String(updates.amount);
       if (updates.unit !== undefined) payload.unit = String(updates.unit);
       if (updates.checked !== undefined) payload.checked = !!updates.checked;
@@ -1213,6 +1276,17 @@ const Api = (() => {
 
     deleteShoppingItem: async (id) => {
       LocalStore.remove('shoppingList', id);
+      return { ok: true };
+    },
+
+    deleteShoppingItemsBatch: async (ids) => {
+      if (!ids || !ids.length) return { ok: true };
+      const idSet = new Set(ids);
+      const list = LocalStore.getCollection('shoppingList');
+      const filtered = list.filter(i => !idSet.has(i.id));
+      list.length = 0;
+      list.push(...filtered);
+      LocalStore.save();
       return { ok: true };
     },
 
@@ -1231,19 +1305,59 @@ const Api = (() => {
       return { ok: true };
     },
 
-    addBulkShoppingItems: async (items) => {
+    addBulkShoppingItems: async (items, mode = 'append', context = {}) => {
       if (!items || !items.length) return { ok: true, count: 0 };
-      items.forEach(i => {
-        LocalStore.insert('shoppingList', {
-          id: LocalStore.uuid(),
-          name: i.name.trim(),
-          amount: String(i.amount || ''),
-          unit: String(i.unit || ''),
-          source: i.source || 'plan',
-          checked: false,
-          createdAt: nowISO()
+      const currentList = LocalStore.getCollection('shoppingList');
+
+      // Si el modo es 'replace', removemos ítems previos de la misma fuente/semana
+      if (mode === 'replace') {
+        const sourceToReplace = context.source || items[0]?.source;
+        const weekKeyToReplace = context.weekKey;
+        const filtered = currentList.filter(item => {
+          if (sourceToReplace === 'plan' && weekKeyToReplace) {
+            return !(item.source === 'plan' && item.weekKey === weekKeyToReplace);
+          } else if (sourceToReplace === 'complemento') {
+            return item.source !== 'complemento';
+          }
+          return true;
         });
+        currentList.length = 0;
+        currentList.push(...filtered);
+      }
+
+      // Fusionar o agregar
+      items.forEach(newItem => {
+        const normName = (newItem.name || '').trim().toLowerCase();
+        const existing = currentList.find(i => (i.name || '').trim().toLowerCase() === normName);
+
+        const newOrigins = Array.isArray(newItem.origins) ? newItem.origins : (newItem.origins ? [newItem.origins] : []);
+
+        if (existing) {
+          const existingOrigins = Array.isArray(existing.origins) ? existing.origins : (existing.origins ? [existing.origins] : []);
+          newOrigins.forEach(orig => {
+            if (orig && !existingOrigins.includes(orig)) {
+              existingOrigins.push(orig);
+            }
+          });
+          existing.origins = existingOrigins;
+          if (newItem.amount && !existing.amount) existing.amount = newItem.amount;
+          if (newItem.unit && !existing.unit) existing.unit = newItem.unit;
+        } else {
+          currentList.push({
+            id: LocalStore.uuid(),
+            name: newItem.name.trim(),
+            origins: newOrigins,
+            amount: String(newItem.amount || ''),
+            unit: String(newItem.unit || ''),
+            source: newItem.source || 'manual',
+            weekKey: newItem.weekKey || context.weekKey || null,
+            checked: false,
+            createdAt: nowISO()
+          });
+        }
       });
+
+      LocalStore.save();
       return { ok: true, count: items.length };
     },
 
@@ -3077,6 +3191,12 @@ const Api = (() => {
     addComplemento,
     updateComplemento,
     deleteComplemento,
+    getComplementCategories: LocalAdapter.getComplementCategories,
+    addComplementCategory: LocalAdapter.addComplementCategory,
+    updateComplementCategory: LocalAdapter.updateComplementCategory,
+    deleteComplementCategory: LocalAdapter.deleteComplementCategory,
+    getAvailableComplementos: LocalAdapter.getAvailableComplementos,
+    setAvailableComplementos: LocalAdapter.setAvailableComplementos,
 
     // Compras
     getShoppingList,
@@ -3085,6 +3205,7 @@ const Api = (() => {
     updateShoppingItem,
     toggleShoppingItem,
     deleteShoppingItem,
+    deleteShoppingItemsBatch: LocalAdapter.deleteShoppingItemsBatch,
     clearCheckedShoppingItems,
     archiveCompletedShopping: clearCheckedShoppingItems,
     clearShoppingList,

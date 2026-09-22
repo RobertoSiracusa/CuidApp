@@ -9,7 +9,7 @@ const App = (() => {
   let currentPanel = 'dashboard';
 
   // ─── Enrutador y Navegación ────────────────────────────────
-  const navigateTo = async (panelId) => {
+  const navigateTo = async (panelId, subTab) => {
     // Si intenta ir a auditoría y no es admin, redirige al dashboard
     if (panelId === 'audit' && !Auth.isAdmin()) {
       Ui.toast('Acceso exclusivo para administradores', 'warning');
@@ -35,6 +35,10 @@ const App = (() => {
 
     currentPanel = panelId;
 
+    if (panelId === 'food' && subTab && window.FoodModule?.setTab) {
+      window.FoodModule.setTab(subTab);
+    }
+
     // Despacho al módulo correspondiente
     const modules = {
       dashboard:      () => DashboardModule?.render(),
@@ -44,7 +48,7 @@ const App = (() => {
       medications:    () => MedicationsModule?.render(),
       roles:          () => RolesModule?.render(),
       agenda:         () => AgendaModule?.render(),
-      food:           () => (window.FoodModule?.showToday ? window.FoodModule.showToday() : window.FoodModule?.render()),
+      food:           () => window.FoodModule?.render(),
       expenses:       () => ExpensesModule?.render(),
       settings:       () => SettingsModule?.render(),
       audit:          () => window.AuditModule?.render()
