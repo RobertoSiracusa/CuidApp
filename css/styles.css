@@ -1846,6 +1846,17 @@ button, .btn, .nav-btn, .chip, .task-check, .inv-step-btn, .shop-check, .more-it
   border-color: var(--accent) !important;
   background: var(--bg-card) !important;
 }
+.avail-comp-card-item.comp-retiring {
+  opacity: 0.35;
+  transform: scale(0.97);
+  pointer-events: none;
+}
+.avail-comp-card-item .retire-label {
+  transition: color 0.15s ease;
+}
+.avail-comp-card-item .retire-label:hover {
+  color: var(--text) !important;
+}
 .avail-comp-card-item .rm-chip-btn:hover {
   color: var(--critical) !important;
 }

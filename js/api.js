@@ -1271,17 +1271,17 @@ const Api = (() => {
 
     // Complementos disponibles en planificador
     getAvailableComplementos: async () => {
-      return LocalStore.getCollection('availableComplementos') || [];
+      const arr = LocalStore.getCollection('availableComplementos') || [];
+      return [...arr];
     },
 
     setAvailableComplementos: async (ids) => {
+      const toSave = Array.isArray(ids) ? [...ids] : [];
       const list = LocalStore.getCollection('availableComplementos');
       list.length = 0;
-      if (Array.isArray(ids)) {
-        list.push(...ids);
-      }
+      list.push(...toSave);
       LocalStore.save();
-      return { ok: true, data: list };
+      return { ok: true, data: [...list] };
     },
 
     // Lista de Compras

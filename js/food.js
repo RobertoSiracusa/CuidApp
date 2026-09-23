@@ -127,6 +127,16 @@ const FoodModule = (() => {
     return types.includes(mealId);
   };
 
+  // Obtiene el ícono de una categoría de complemento
+  const getComplementCategoryIcon = (catId) => {
+    const c = (catId || '').toLowerCase();
+    if (c === 'bebidas') return '🥤';
+    if (c === 'contornos') return '🥗';
+    if (c === 'snacks') return '🍎';
+    const found = cachedCategories.find(cat => cat.id === catId);
+    return found?.icon || '🧺';
+  };
+
   // Normalizador de plan
   const normalizePlan = (raw) => {
     if (Array.isArray(raw)) {
@@ -429,17 +439,23 @@ const FoodModule = (() => {
     const sevenDays = get7DaysFromMonday(currentMonday);
     const sevenDates = sevenDays.map(d => d.toISOString().split('T')[0]);
 
-    const [planRes, recipesRes, compsRes, availRes] = await Promise.all([
+    const [planRes, recipesRes, compsRes, catsRes, availRes] = await Promise.all([
       Api.getWeeklyPlan(weekInfo.weekKey, sevenDates),
       Api.getRecipes(),
       Api.getComplementos(),
+      Api.getComplementCategories(),
       Api.getAvailableComplementos()
     ]);
 
     cachedPlan = normalizePlan(planRes.data || planRes);
     cachedRecipes = recipesRes.data || [];
     cachedComplementos = compsRes.data || [];
-    cachedAvailableComplementos = Array.isArray(availRes) ? availRes : (availRes?.data || []);
+    cachedCategories = catsRes.data || [
+      { id: 'bebidas', label: 'Bebidas', icon: '🥤', isCustom: false },
+      { id: 'contornos', label: 'Contornos', icon: '🥗', isCustom: false },
+      { id: 'snacks', label: 'Snacks', icon: '🍎', isCustom: false }
+    ];
+    cachedAvailableComplementos = Array.isArray(availRes) ? [...availRes] : (availRes?.data ? [...availRes.data] : []);
 
     const recipeMap = new Map(cachedRecipes.map(r => [r.id, r]));
     const todayStr = Api.todayStr();
@@ -504,6 +520,11 @@ const FoodModule = (() => {
     const availItems = cachedAvailableComplementos
       .map(id => cachedComplementos.find(c => String(c.id) === String(id)))
       .filter(Boolean);
+
+    // Complementos del catálogo que aún no están en disponibles
+    const selectableComps = cachedComplementos.filter(c =>
+      !cachedAvailableComplementos.some(id => String(id) === String(c.id))
+    );
 
     el.innerHTML = `
       <div class="section-header">
@@ -572,31 +593,49 @@ const FoodModule = (() => {
           ` : ''}
         </div>
 
-        <!-- Desplegable para seleccionar complemento -->
-        <div style="display:flex;gap:8px;margin-top:8px;">
+        <!-- Selector y botón para añadir complemento disponible -->
+        <div style="display:flex;gap:8px;align-items:center;margin-top:10px;">
           <select class="form-select" id="select-add-complemento" style="flex:1;">
-            <option value="">-- Seleccionar complemento para agregar a disponibles --</option>
-            ${cachedComplementos.map(c => `
-              <option value="${Api.escapeHtml(c.id)}">${Api.escapeHtml(c.name)}</option>
-            `).join('')}
+            ${selectableComps.length === 0 ? `
+              <option value="">${cachedComplementos.length > 0 ? '-- Todos los complementos ya están en disponibles --' : '-- Sin complementos creados (ve a la pestaña Complementos) --'}</option>
+            ` : `
+              <option value="">-- Seleccionar complemento para agregar a disponibles --</option>
+              ${selectableComps.map(c => `
+                <option value="${Api.escapeHtml(c.id)}">${getComplementCategoryIcon(c.category)} ${Api.escapeHtml(c.name)}</option>
+              `).join('')}
+            `}
           </select>
+          <button type="button" class="btn btn-primary btn-sm" id="btn-add-comp-to-avail" style="padding:8px 16px;white-space:nowrap;font-weight:700;" ${selectableComps.length === 0 ? 'disabled' : ''}>
+            + Añadir
+          </button>
         </div>
 
-        <!-- Lista de complementos disponibles mostrados con casilla y scrollbar accesible -->
-        <div class="accessible-scroll" style="max-height:160px;margin-top:12px;">
+        <!-- Lista de complementos disponibles mostrados con casilla 'Se acabó' y scrollbar accesible -->
+        <div class="accessible-scroll" style="max-height:180px;margin-top:12px;">
           ${availItems.length === 0 ? `
             <div class="text-xs text-muted" style="padding:14px;text-align:center;background:var(--bg-glass);border-radius:var(--r-md);border:1px dashed var(--border-subtle);">
-              No hay complementos marcados como disponibles actualmente.<br>Selecciona uno en el menú superior para tenerlo en consulta permanente.
+              No hay complementos marcados como disponibles actualmente.<br>Selecciona uno en el menú superior y pulsa <strong>+ Añadir</strong> para tenerlo en consulta permanente.
             </div>
           ` : `
-            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:8px;">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(240px, 1fr));gap:8px;">
               ${availItems.map(c => `
-                <div class="avail-comp-card-item" data-id="${Api.escapeHtml(c.id)}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--r-md);">
-                  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;margin:0;" title="Marcar cuando se termine la cantidad disponible">
-                    <input type="checkbox" class="chk-retire-comp" data-id="${Api.escapeHtml(c.id)}" style="width:18px;height:18px;cursor:pointer;">
-                    <span style="font-weight:700;font-size:0.875rem;color:var(--text);">${Api.escapeHtml(c.name)}</span>
-                  </label>
-                  <span class="rm-chip-btn" data-id="${Api.escapeHtml(c.id)}" title="Quitar inmediatamente" style="cursor:pointer;padding:2px 6px;color:var(--text-muted);font-size:1.1rem;line-height:1;">×</span>
+                <div class="avail-comp-card-item" data-id="${Api.escapeHtml(c.id)}" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--r-md);gap:8px;">
+                  <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">
+                    <span style="font-size:1.2rem;flex-shrink:0;">${getComplementCategoryIcon(c.category)}</span>
+                    <div style="flex:1;min-width:0;">
+                      <div style="font-weight:700;font-size:0.875rem;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                        ${Api.escapeHtml(c.name)}
+                      </div>
+                      ${c.notes ? `<div style="font-size:0.7rem;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${Api.escapeHtml(c.notes)}</div>` : ''}
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+                    <label class="retire-label" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;margin:0;font-size:0.75rem;color:var(--text-sec);font-weight:600;" title="Marcar cuando se termine la cantidad disponible">
+                      <input type="checkbox" class="chk-retire-comp" data-id="${Api.escapeHtml(c.id)}" style="width:17px;height:17px;cursor:pointer;accent-color:var(--accent);">
+                      <span>Se acabó</span>
+                    </label>
+                    <button type="button" class="btn btn-ghost btn-xs rm-chip-btn text-muted" data-id="${Api.escapeHtml(c.id)}" title="Quitar inmediatamente" style="font-size:1.15rem;line-height:1;padding:2px 6px;cursor:pointer;">×</button>
+                  </div>
                 </div>
               `).join('')}
             </div>
@@ -661,32 +700,56 @@ const FoodModule = (() => {
       });
     });
 
-    // Complementos disponibles: agregar desde select
-    el.querySelector('#select-add-complemento')?.addEventListener('change', async (e) => {
-      const compId = e.target.value;
+    // Complementos disponibles: añadir (centralizado para select y botón + Añadir)
+    const addSelectedComplemento = async (compId) => {
       if (!compId) return;
-      const strId = String(compId);
+      const strId = String(compId).trim();
+      if (!strId) return;
       if (cachedAvailableComplementos.some(id => String(id) === strId)) {
         Ui.toast('Este complemento ya está en la lista de disponibles', 'info');
-        e.target.value = '';
         return;
       }
-      cachedAvailableComplementos.push(strId);
-      await Api.setAvailableComplementos(cachedAvailableComplementos);
-      Ui.toast('Complemento agregado a disponibles', 'success');
+      const comp = cachedComplementos.find(c => String(c.id) === strId);
+      const compName = comp?.name || 'Complemento';
+      const updated = [...cachedAvailableComplementos, strId];
+      cachedAvailableComplementos = updated;
+      await Api.setAvailableComplementos(updated);
+      Ui.toast(`"${compName}" agregado a disponibles`, 'success');
       render();
+    };
+
+    const selectCompEl = el.querySelector('#select-add-complemento');
+    selectCompEl?.addEventListener('change', async (e) => {
+      const val = e.target.value;
+      if (val) await addSelectedComplemento(val);
     });
 
-    // Complementos disponibles: casilla interactiva para retirar cuando se agote la cantidad
+    el.querySelector('#btn-add-comp-to-avail')?.addEventListener('click', async () => {
+      const val = selectCompEl?.value;
+      if (!val) {
+        Ui.toast('Selecciona un complemento del menú desplegable', 'info');
+        return;
+      }
+      await addSelectedComplemento(val);
+    });
+
+    // Complementos disponibles: casilla interactiva "Se acabó"
     el.querySelectorAll('.chk-retire-comp').forEach(chk => {
       chk.addEventListener('change', async () => {
         const id = chk.getAttribute('data-id');
+        const card = chk.closest('.avail-comp-card-item');
+        if (card) {
+          card.classList.add('comp-retiring');
+        }
         const comp = cachedComplementos.find(c => String(c.id) === String(id));
         const name = comp?.name || 'Complemento';
-        cachedAvailableComplementos = cachedAvailableComplementos.filter(cId => String(cId) !== String(id));
-        await Api.setAvailableComplementos(cachedAvailableComplementos);
-        Ui.toast(`"${name}" marcado como agotado y retirado`, 'info');
-        render();
+        setTimeout(async () => {
+          const updated = cachedAvailableComplementos.filter(cId => String(cId) !== String(id));
+          cachedAvailableComplementos = updated;
+          await Api.setAvailableComplementos(updated);
+          Ui.toast(`"${name}" marcado como agotado y retirado`, 'info');
+          render();
+        }, 180);
       });
     });
 
@@ -694,8 +757,9 @@ const FoodModule = (() => {
     el.querySelectorAll('.rm-chip-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
-        cachedAvailableComplementos = cachedAvailableComplementos.filter(cId => String(cId) !== String(id));
-        await Api.setAvailableComplementos(cachedAvailableComplementos);
+        const updated = cachedAvailableComplementos.filter(cId => String(cId) !== String(id));
+        cachedAvailableComplementos = updated;
+        await Api.setAvailableComplementos(updated);
         render();
       });
     });
