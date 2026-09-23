@@ -35,23 +35,24 @@ const App = (() => {
 
     currentPanel = panelId;
 
-    if (panelId === 'food' && subTab && window.FoodModule?.setTab) {
-      window.FoodModule.setTab(subTab);
+    if (panelId === 'food' && subTab) {
+      const fm = window.FoodModule || (typeof FoodModule !== 'undefined' ? FoodModule : null);
+      if (fm?.setTab) fm.setTab(subTab);
     }
 
     // Despacho al módulo correspondiente
     const modules = {
-      dashboard:      () => DashboardModule?.render(),
-      administration: () => window.AdministrationModule?.render(),
-      tasks:          () => TasksModule?.render(),
-      inventory:      () => InventoryModule?.render(),
-      medications:    () => MedicationsModule?.render(),
-      roles:          () => RolesModule?.render(),
-      agenda:         () => AgendaModule?.render(),
-      food:           () => window.FoodModule?.render(),
-      expenses:       () => ExpensesModule?.render(),
-      settings:       () => SettingsModule?.render(),
-      audit:          () => window.AuditModule?.render()
+      dashboard:      () => (window.DashboardModule || (typeof DashboardModule !== 'undefined' ? DashboardModule : null))?.render(),
+      administration: () => (window.AdministrationModule || (typeof AdministrationModule !== 'undefined' ? AdministrationModule : null))?.render(),
+      tasks:          () => (window.TasksModule || (typeof TasksModule !== 'undefined' ? TasksModule : null))?.render(),
+      inventory:      () => (window.InventoryModule || (typeof InventoryModule !== 'undefined' ? InventoryModule : null))?.render(),
+      medications:    () => (window.MedicationsModule || (typeof MedicationsModule !== 'undefined' ? MedicationsModule : null))?.render(),
+      roles:          () => (window.RolesModule || (typeof RolesModule !== 'undefined' ? RolesModule : null))?.render(),
+      agenda:         () => (window.AgendaModule || (typeof AgendaModule !== 'undefined' ? AgendaModule : null))?.render(),
+      food:           () => (window.FoodModule || (typeof FoodModule !== 'undefined' ? FoodModule : null))?.render(),
+      expenses:       () => (window.ExpensesModule || (typeof ExpensesModule !== 'undefined' ? ExpensesModule : null))?.render(),
+      settings:       () => (window.SettingsModule || (typeof SettingsModule !== 'undefined' ? SettingsModule : null))?.render(),
+      audit:          () => (window.AuditModule || (typeof AuditModule !== 'undefined' ? AuditModule : null))?.render()
     };
 
     if (modules[panelId]) {

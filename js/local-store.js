@@ -213,101 +213,11 @@ const LocalStore = (() => {
           createdAt: now
         }
       ],
-      // ── Datos reales migrados de cuidapp_db.json ──
-      recipes: [
-        {
-          id: 'rec_pure',
-          name: 'Pure de papas',
-          mealTypes: ['lunch', 'dinner'],
-          instructions: '',
-          notes: '',
-          createdAt: '2026-09-21T15:37:27.977Z'
-        },
-        {
-          id: 'rec_huevos',
-          name: 'Huevos Revueltos',
-          mealTypes: ['breakfast'],
-          instructions: '',
-          notes: '',
-          createdAt: '2026-09-21T15:47:00.563Z'
-        },
-        {
-          id: 'rec_crema',
-          name: 'Crema Calabacin y Pollo',
-          mealTypes: ['lunch', 'dinner'],
-          instructions: '',
-          notes: '',
-          createdAt: '2026-09-21T15:47:44.181Z'
-        },
-        {
-          id: 'rec_tortilla',
-          name: 'Tortilla de Papas',
-          mealTypes: ['lunch', 'dinner'],
-          instructions: '',
-          notes: '',
-          createdAt: '2026-09-21T15:48:09.820Z'
-        }
-      ],
-      recipeIngredients: [
-        { id: uuid(), recipeId: 'rec_pure', name: 'Papas', amount: '', unit: '' },
-        { id: uuid(), recipeId: 'rec_pure', name: 'Leche', amount: '', unit: '' },
-        { id: uuid(), recipeId: 'rec_pure', name: 'Griego', amount: 'Yogurt', unit: '' },
-        { id: uuid(), recipeId: 'rec_pure', name: 'Queso', amount: '', unit: '' },
-
-        { id: uuid(), recipeId: 'rec_huevos', name: 'Huevo', amount: '', unit: '' },
-        { id: uuid(), recipeId: 'rec_huevos', name: 'Queso', amount: '', unit: '' },
-
-        { id: uuid(), recipeId: 'rec_crema', name: 'Calabacin', amount: '', unit: '' },
-        { id: uuid(), recipeId: 'rec_crema', name: 'Pollo', amount: '', unit: '' },
-        { id: uuid(), recipeId: 'rec_crema', name: 'Parmesano', amount: '', unit: '' },
-        { id: uuid(), recipeId: 'rec_crema', name: 'Ricotta', amount: '', unit: '' },
-
-        { id: uuid(), recipeId: 'rec_tortilla', name: 'Papas', amount: '', unit: '' },
-        { id: uuid(), recipeId: 'rec_tortilla', name: 'Huevo', amount: '', unit: '' }
-      ],
-      weeklyPlan: [
-        // Domingo (0)
-        { id: uuid(), dayIndex: 0, dayOfWeek: 0, mealType: 'breakfast', recipeId: 'rec_huevos' },
-        { id: uuid(), dayIndex: 0, dayOfWeek: 0, mealType: 'lunch', recipeId: 'rec_tortilla' },
-        { id: uuid(), dayIndex: 0, dayOfWeek: 0, mealType: 'dinner', recipeId: 'rec_crema' },
-        // Lunes (1)
-        { id: uuid(), dayIndex: 1, dayOfWeek: 1, mealType: 'breakfast', recipeId: 'rec_huevos' },
-        { id: uuid(), dayIndex: 1, dayOfWeek: 1, mealType: 'lunch', recipeId: 'rec_pure' },
-        { id: uuid(), dayIndex: 1, dayOfWeek: 1, mealType: 'lunch', recipeId: 'rec_crema' },
-        { id: uuid(), dayIndex: 1, dayOfWeek: 1, mealType: 'dinner', recipeId: 'rec_tortilla' },
-        // Martes (2)
-        { id: uuid(), dayIndex: 2, dayOfWeek: 2, mealType: 'breakfast', recipeId: 'rec_huevos' },
-        { id: uuid(), dayIndex: 2, dayOfWeek: 2, mealType: 'lunch', recipeId: 'rec_tortilla' },
-        { id: uuid(), dayIndex: 2, dayOfWeek: 2, mealType: 'dinner', recipeId: 'rec_pure' },
-        // Miércoles (3)
-        { id: uuid(), dayIndex: 3, dayOfWeek: 3, mealType: 'breakfast', recipeId: 'rec_huevos' },
-        { id: uuid(), dayIndex: 3, dayOfWeek: 3, mealType: 'lunch', recipeId: 'rec_crema' },
-        { id: uuid(), dayIndex: 3, dayOfWeek: 3, mealType: 'dinner', recipeId: 'rec_tortilla' },
-        // Jueves (4)
-        { id: uuid(), dayIndex: 4, dayOfWeek: 4, mealType: 'breakfast', recipeId: 'rec_huevos' },
-        { id: uuid(), dayIndex: 4, dayOfWeek: 4, mealType: 'lunch', recipeId: 'rec_pure' },
-        { id: uuid(), dayIndex: 4, dayOfWeek: 4, mealType: 'dinner', recipeId: 'rec_crema' },
-        // Viernes (5)
-        { id: uuid(), dayIndex: 5, dayOfWeek: 5, mealType: 'breakfast', recipeId: 'rec_huevos' },
-        { id: uuid(), dayIndex: 5, dayOfWeek: 5, mealType: 'lunch', recipeId: 'rec_tortilla' },
-        { id: uuid(), dayIndex: 5, dayOfWeek: 5, mealType: 'lunch', recipeId: 'rec_crema' },
-        { id: uuid(), dayIndex: 5, dayOfWeek: 5, mealType: 'dinner', recipeId: 'rec_pure' },
-        // Sábado (6)
-        { id: uuid(), dayIndex: 6, dayOfWeek: 6, mealType: 'breakfast', recipeId: 'rec_huevos' },
-        { id: uuid(), dayIndex: 6, dayOfWeek: 6, mealType: 'lunch', recipeId: 'rec_pure' },
-        { id: uuid(), dayIndex: 6, dayOfWeek: 6, mealType: 'dinner', recipeId: 'rec_tortilla' }
-      ],
-      complementos: [
-        {
-          id: 'comp_coco',
-          name: 'agua de coco',
-          category: 'bebidas',
-          amount: '',
-          unit: '',
-          notes: '',
-          createdAt: '2026-09-21T15:37:45.169Z'
-        }
-      ],
+      // ── Datos de Menú y Alimentación (inician vacíos para gestión del usuario) ──
+      recipes: [],
+      recipeIngredients: [],
+      weeklyPlan: [],
+      complementos: [],
       complementoCategories: [
         { id: 'bebidas', label: 'Bebidas', icon: '🥤', isCustom: false },
         { id: 'contornos', label: 'Contornos', icon: '🥗', isCustom: false },
@@ -342,18 +252,6 @@ const LocalStore = (() => {
           oldValues: {},
           newValues: { patient_name: 'El Paciente', emergency_contact_name: 'Médico de guardia' },
           createdAt: now
-        },
-        {
-          id: 2,
-          tableName: 'recipes',
-          recordId: 'rec_pure',
-          action: 'INSERT',
-          actorId: 'usr_admin',
-          actorName: 'Administrador Local',
-          changedFields: ['name'],
-          oldValues: {},
-          newValues: { name: 'Pure de papas' },
-          createdAt: now
         }
       ]
     };
@@ -362,14 +260,6 @@ const LocalStore = (() => {
   // ─── Migración y Auto-reparación de Esquema ────────────────────
   const sanitizeAndMigrate = (data) => {
     if (!data || typeof data !== 'object') return getInitialDatabase();
-
-    const LEGACY_ID_MAP = {
-      'mubesejtzfv2d': 'rec_pure',
-      'mubf4ocz2aix0': 'rec_huevos',
-      'mubf5m0ls981z': 'rec_crema',
-      'mubf65ssp8kjr': 'rec_tortilla',
-      'mubesrtdojy23': 'comp_coco'
-    };
 
     // Colecciones que DEBEN ser arreglos siempre
     const ARRAY_COLS = [
@@ -388,8 +278,7 @@ const LocalStore = (() => {
           if (dayObj && typeof dayObj === 'object') {
             Object.keys(dayObj).forEach(meal => {
               const rids = Array.isArray(dayObj[meal]) ? dayObj[meal] : [dayObj[meal]];
-              rids.filter(Boolean).forEach(rawRid => {
-                const rid = LEGACY_ID_MAP[rawRid] || rawRid;
+              rids.filter(Boolean).forEach(rid => {
                 arr.push({
                   id: uuid(),
                   dayIndex: parseInt(day, 10),
@@ -406,63 +295,88 @@ const LocalStore = (() => {
         data[col] = [];
       }
     });
-
-    const initial = getInitialDatabase();
-
-    // 1. Reconciliar recetas
-    if (!data.recipes || data.recipes.length === 0) {
-      data.recipes = initial.recipes;
-      data.recipeIngredients = initial.recipeIngredients;
-    } else {
-      data.recipes.forEach(r => {
-        if (LEGACY_ID_MAP[r.id]) r.id = LEGACY_ID_MAP[r.id];
-      });
-      // Asegurar que las recetas base existan
-      initial.recipes.forEach(defR => {
-        if (!data.recipes.some(r => r.id === defR.id || r.name.toLowerCase() === defR.name.toLowerCase())) {
-          data.recipes.push(defR);
-        }
-      });
-      if (!data.recipeIngredients || data.recipeIngredients.length === 0) {
-        data.recipeIngredients = initial.recipeIngredients;
-      }
+    if (!Array.isArray(data.complementoCategories) || data.complementoCategories.length === 0) {
+      data.complementoCategories = [
+        { id: 'bebidas', label: 'Bebidas', icon: '🥤', isCustom: false },
+        { id: 'contornos', label: 'Contornos', icon: '🥗', isCustom: false },
+        { id: 'snacks', label: 'Snacks', icon: '🍎', isCustom: false }
+      ];
     }
 
-    // 2. Reconciliar weeklyPlan: asegurar que todos los días (0..6) tengan comidas
-    if (!data.weeklyPlan || data.weeklyPlan.length === 0) {
-      data.weeklyPlan = [...initial.weeklyPlan];
+    // Lista de IDs hardcodeados que deben ser purgados de raíz
+    const SAMPLE_FOOD_IDS = new Set([
+      'mubesejtzfv2d', 'rec_pure',
+      'mubf4ocz2aix0', 'rec_huevos',
+      'mubf5m0ls981z', 'rec_crema',
+      'mubf65ssp8kjr', 'rec_tortilla',
+      'mubesrtdojy23', 'comp_coco'
+    ]);
+
+    // Limpieza de datos hardcodeados existentes en el almacenamiento local
+    if (Array.isArray(data.recipes)) {
+      data.recipes = data.recipes.filter(r => r && !SAMPLE_FOOD_IDS.has(r.id));
     } else {
+      data.recipes = [];
+    }
+
+    if (Array.isArray(data.recipeIngredients)) {
+      data.recipeIngredients = data.recipeIngredients.filter(i => i && !SAMPLE_FOOD_IDS.has(i.recipeId));
+    } else {
+      data.recipeIngredients = [];
+    }
+
+    if (Array.isArray(data.weeklyPlan)) {
+      data.weeklyPlan = data.weeklyPlan.filter(s => s && typeof s === 'object' && !SAMPLE_FOOD_IDS.has(s.recipeId));
+      const currentWk = (() => {
+        const d = new Date();
+        const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        const dayNum = date.getUTCDay() || 7;
+        date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+        const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+        return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+      })();
       data.weeklyPlan.forEach(slot => {
-        if (slot.recipeId && LEGACY_ID_MAP[slot.recipeId]) {
-          slot.recipeId = LEGACY_ID_MAP[slot.recipeId];
-        }
-        if (slot.dayIndex === undefined && slot.dayOfWeek !== undefined) {
-          slot.dayIndex = Number(slot.dayOfWeek);
-        }
-        if (slot.dayOfWeek === undefined && slot.dayIndex !== undefined) {
-          slot.dayOfWeek = Number(slot.dayIndex);
+        if (slot) {
+          if (slot.dayIndex === undefined && slot.dayOfWeek !== undefined) {
+            slot.dayIndex = Number(slot.dayOfWeek);
+          }
+          if (slot.dayOfWeek === undefined && slot.dayIndex !== undefined) {
+            slot.dayOfWeek = Number(slot.dayIndex);
+          }
+          if (!slot.weekKey && !slot.date) {
+            slot.weekKey = currentWk;
+          }
         }
       });
-      // Asegurar que ningún día (0..6) quede completamente vacío
-      for (let day = 0; day <= 6; day++) {
-        const hasDayMeals = data.weeklyPlan.some(s => Number(s.dayIndex ?? s.dayOfWeek) === day && s.recipeId);
-        if (!hasDayMeals) {
-          const defaultDaySlots = initial.weeklyPlan.filter(s => s.dayIndex === day);
-          data.weeklyPlan.push(...defaultDaySlots);
-        }
-      }
-    }
-
-    // 3. Reconciliar complementos
-    if (!data.complementos || data.complementos.length === 0) {
-      data.complementos = initial.complementos;
+      data.weeklyPlan = data.weeklyPlan.filter(s => s && (s.dayIndex !== undefined || s.dayOfWeek !== undefined));
     } else {
-      data.complementos.forEach(c => {
-        if (LEGACY_ID_MAP[c.id]) c.id = LEGACY_ID_MAP[c.id];
-      });
+      data.weeklyPlan = [];
     }
 
-    // 4. Reconciliar categorias de complementos
+    if (Array.isArray(data.complementos)) {
+      data.complementos = data.complementos.filter(c => c && !SAMPLE_FOOD_IDS.has(c.id));
+    } else {
+      data.complementos = [];
+    }
+
+    if (Array.isArray(data.availableComplementos)) {
+      data.availableComplementos = data.availableComplementos.filter(id => id && !SAMPLE_FOOD_IDS.has(id));
+    } else {
+      data.availableComplementos = [];
+    }
+
+    if (Array.isArray(data.shoppingList)) {
+      data.shoppingList = data.shoppingList.filter(i => i && !SAMPLE_FOOD_IDS.has(i.recipeId) && !SAMPLE_FOOD_IDS.has(i.complementoId));
+    } else {
+      data.shoppingList = [];
+    }
+
+    if (Array.isArray(data.auditLog)) {
+      data.auditLog = data.auditLog.filter(a => a && !(a.tableName === 'recipes' && SAMPLE_FOOD_IDS.has(a.recordId)));
+    }
+
+    // Reconciliar categorías de complementos (mantener las categorías base del sistema)
     if (!data.complementoCategories || data.complementoCategories.length === 0) {
       data.complementoCategories = [
         { id: 'bebidas', label: 'Bebidas', icon: '🥤', isCustom: false },

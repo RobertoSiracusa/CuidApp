@@ -480,3 +480,5 @@ const TasksModule = (() => {
     showAddModal
   };
 })();
+
+window.TasksModule = TasksModule;

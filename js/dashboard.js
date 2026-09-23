@@ -18,6 +18,15 @@ const DashboardModule = (() => {
       const todayStr = Api.todayStr();
 
       // Carga paralela de todos los datos necesarios para el dashboard
+      const now = new Date();
+      // Semana ISO actual para consultar el menú planificado
+      const dUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+      const dNum = dUtc.getUTCDay() || 7;
+      dUtc.setUTCDate(dUtc.getUTCDate() + 4 - dNum);
+      const yStart = new Date(Date.UTC(dUtc.getUTCFullYear(), 0, 1));
+      const curWeekNo = Math.ceil((((dUtc - yStart) / 86400000) + 1) / 7);
+      const curWeekKey = `${dUtc.getUTCFullYear()}-W${String(curWeekNo).padStart(2, '0')}`;
+
       const [
         statusRes,
         settingsRes,
@@ -45,7 +54,7 @@ const DashboardModule = (() => {
         Api.getUpcomingAppointments(7),
         Api.getShiftNotes({ limit: 5 }),
         Api.getActiveAlerts(),
-        Api.getWeeklyPlan(),
+        Api.getWeeklyPlan(curWeekKey),
         Api.getRecipes(),
         Api.getShoppingList()
       ]);
@@ -67,22 +76,30 @@ const DashboardModule = (() => {
       const pendingShoppingCount = shopping.filter(i => !i.checked).length;
 
       // Menú de hoy (RF-74)
-      const now = new Date();
       const recipeMap = new Map(recipes.map(r => [r.id, r]));
-      const todayDayOfWeek = now.getDay();
+      // Cuadrícula semanal usa 0 = Lunes ... 6 = Domingo
+      const todayDayIndex = (now.getDay() + 6) % 7;
+      const todayDate = todayStr;
       const mealTypes = [
         { id: 'desayuno', legacyId: 'breakfast', label: 'Desayuno', icon: '🌅' },
         { id: 'almuerzo', legacyId: 'lunch',     label: 'Almuerzo', icon: '🍽️' },
         { id: 'cena',     legacyId: 'dinner',    label: 'Cena',     icon: '🌙' }
       ];
       const todayMeals = [];
+      let totalTodayRecipesCount = 0;
       mealTypes.forEach(mt => {
-        const slot = plan.find(s => (Number(s.dayOfWeek) === todayDayOfWeek || Number(s.dayIndex) === todayDayOfWeek) && (s.mealType === mt.id || s.mealType === mt.legacyId));
+        const slot = plan.find(s => (
+          s &&
+          ((s.date && s.date === todayDate) || (!s.date && Number(s.dayIndex ?? s.dayOfWeek) === todayDayIndex && (s.weekKey === curWeekKey || !s.weekKey))) &&
+          (s.mealType === mt.id || s.mealType === mt.legacyId)
+        ));
         const rNames = (slot?.recipeIds || []).map(id => recipeMap.get(id)?.name).filter(Boolean);
+        totalTodayRecipesCount += rNames.length;
         if (rNames.length > 0) {
           todayMeals.push({
             icon: mt.icon,
             label: mt.label,
+            recipesCount: rNames.length,
             text: rNames.join(', ')
           });
         }
@@ -259,22 +276,27 @@ const DashboardModule = (() => {
             </div>
             <div class="quick-label">Insumo bajo</div>
           </div>
-          <div class="quick-item" data-goto="food" role="button" tabindex="0">
+          <div class="quick-item" data-goto="food" data-subtab="planificacion" role="button" tabindex="0">
             <div class="quick-icon">🍽️</div>
             <div class="quick-val text-primary">
-              ${todayMeals.length}
+              ${totalTodayRecipesCount}
             </div>
             <div class="quick-label">Menú del día</div>
           </div>
         </div>
 
-        <!-- Menú de Hoy (RF-74: Prominente en Inicio) -->
+        <!-- Menú de Hoy (RF-74: Prominente en Inicio, siempre visible) -->
         <div class="card" style="margin-bottom:16px;cursor:pointer;background:var(--bg-glass);border-left:3px solid var(--accent);" onclick="App.navigateTo('food', 'planificacion')">
           <div class="flex items-center justify-between" style="margin-bottom:8px;">
-            <div class="card-title" style="margin-bottom:0;">🍽️ MENÚ DE HOY</div>
+            <div class="flex items-center gap-2">
+              <div class="card-title" style="margin-bottom:0;">🍽️ MENÚ DE HOY</div>
+              <span class="badge" style="font-size:0.72rem;background:rgba(14, 165, 233, 0.15);color:var(--accent);font-weight:700;padding:2px 8px;border-radius:var(--r-full);">
+                ${totalTodayRecipesCount} receta${totalTodayRecipesCount === 1 ? '' : 's'}
+              </span>
+            </div>
             <span class="btn btn-ghost btn-xs text-accent">Ver planificación →</span>
           </div>
-          ${todayMeals.length > 0 ? `
+          ${totalTodayRecipesCount > 0 ? `
             <div style="display:flex;flex-direction:column;gap:6px;">
               ${todayMeals.map(m => `
                 <div style="display:flex;align-items:center;gap:8px;font-size:0.85rem;">
@@ -285,9 +307,9 @@ const DashboardModule = (() => {
               `).join('')}
             </div>
           ` : `
-            <div class="text-xs text-muted" style="margin-bottom:8px;">Sin comidas planificadas para hoy. Toca para ver el recetario o cargar menús.</div>
-            <button class="btn btn-secondary btn-xs" onclick="event.stopPropagation(); LocalStore.resetToDefaults(); DashboardModule.render(); Ui.toast('Menús de la semana restablecidos', 'success');">
-              🔄 Cargar Menús de la Semana
+            <div class="text-xs text-muted" style="margin-bottom:8px;">0 recetas planificadas para hoy. Toca para planificar desayuno, almuerzo o cena en la cuadrícula semanal.</div>
+            <button class="btn btn-secondary btn-xs" onclick="event.stopPropagation(); App.navigateTo('food', 'planificacion');">
+              📅 Planificar comidas de hoy
             </button>
           `}
         </div>
@@ -397,7 +419,7 @@ const DashboardModule = (() => {
           <button class="card" style="cursor:pointer;text-align:left;background:var(--bg-glass);" onclick="App.navigateTo('food', 'planificacion')">
             <div style="font-size:1.25rem;margin-bottom:4px;">🍽️</div>
             <div class="font-bold text-sm">Menú del día</div>
-            <div class="text-xs text-muted">${todayMeals.length > 0 ? Api.escapeHtml(todayMeals[0].label + ': ' + todayMeals[0].text) : 'Plan de alimentación'}</div>
+            <div class="text-xs text-muted">${totalTodayRecipesCount > 0 ? `${totalTodayRecipesCount} receta${totalTodayRecipesCount === 1 ? '' : 's'} para hoy` : 'Plan de alimentación'}</div>
           </button>
         </div>
       `;
@@ -436,7 +458,8 @@ const DashboardModule = (() => {
     el.querySelectorAll('.quick-item[data-goto]').forEach(item => {
       item.addEventListener('click', () => {
         const panel = item.getAttribute('data-goto');
-        if (panel) App.navigateTo(panel);
+        const subTab = item.getAttribute('data-subtab');
+        if (panel) App.navigateTo(panel, subTab);
       });
     });
 
@@ -489,3 +512,5 @@ const DashboardModule = (() => {
     updatePatientStatus
   };
 })();
+
+window.DashboardModule = DashboardModule;

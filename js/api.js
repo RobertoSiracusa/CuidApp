@@ -1006,28 +1006,46 @@ const Api = (() => {
 
     deleteRecipe: async (id) => {
       LocalStore.remove('recipes', id, 'recipes');
-      const allIngs = LocalStore.getCollection('recipeIngredients');
-      const filtered = allIngs.filter(i => i.recipeId !== id);
+      const allIngs = LocalStore.getCollection('recipeIngredients') || [];
+      const filtered = allIngs.filter(i => i && i.recipeId !== id);
       allIngs.length = 0;
       allIngs.push(...filtered);
+
+      // Limpiar asignaciones de la receta en weeklyPlan
+      const plan = LocalStore.getCollection('weeklyPlan') || [];
+      const cleanedPlan = plan.filter(s => s && s.recipeId !== id);
+      plan.length = 0;
+      plan.push(...cleanedPlan);
+
       LocalStore.save();
       return { ok: true };
     },
 
-    getWeeklyPlan: async (weekKey) => {
+    getWeeklyPlan: async (weekKey, dateList = null) => {
       const rows = LocalStore.getCollection('weeklyPlan') || [];
-      const filteredRows = weekKey
-        ? rows.filter(r => (r.weekKey === weekKey || (!r.weekKey && weekKey === 'current')))
-        : rows;
+      const filteredRows = rows.filter(r => {
+        if (!r) return false;
+        if (dateList && Array.isArray(dateList) && dateList.length > 0 && r.date) {
+          return dateList.includes(r.date);
+        }
+        if (weekKey) {
+          return r.weekKey === weekKey || (!r.weekKey && weekKey === 'current');
+        }
+        return true;
+      });
 
       const slotMap = new Map();
       filteredRows.forEach(row => {
+        if (!row) return;
         const d = Number(row.dayIndex !== undefined ? row.dayIndex : row.day_index);
         const m = row.mealType || row.meal_type;
         const rid = row.recipeId || row.recipe_id;
-        const key = `${d}_${m}`;
+        const dateStr = row.date || null;
+        if (isNaN(d) || !m) return;
+        const key = dateStr ? `${dateStr}_${m}` : `${d}_${m}`;
         if (!slotMap.has(key)) {
           slotMap.set(key, {
+            date: dateStr,
             dayOfWeek: d,
             dayIndex: d,
             mealType: m,
@@ -1039,35 +1057,62 @@ const Api = (() => {
         }
       });
 
-      const slotsArray = Array.from(slotMap.values());
-      // Mantener compatibilidad si se accede por plan[d][m]
-      filteredRows.forEach(row => {
-        const d = Number(row.dayIndex !== undefined ? row.dayIndex : row.day_index);
-        const m = row.mealType || row.meal_type;
-        const rid = row.recipeId || row.recipe_id;
-        if (!slotsArray[d]) slotsArray[d] = {};
-        if (!slotsArray[d][m]) slotsArray[d][m] = [];
-        if (rid && !slotsArray[d][m].includes(rid)) {
-          slotsArray[d][m].push(rid);
-        }
-      });
-      return slotsArray;
+      return Array.from(slotMap.values());
     },
 
-    setMealInPlan: async (dayIndex, mealType, recipeIds, weekKey) => {
+    getDailyMenu: async (targetDateStr) => {
+      const rows = LocalStore.getCollection('weeklyPlan') || [];
+      const dateStr = targetDateStr || todayStr();
+      const matched = rows.filter(r => r && (r.date === dateStr));
+      const res = {
+        date: dateStr,
+        desayuno: [],
+        almuerzo: [],
+        cena: [],
+        totalRecipes: 0
+      };
+      matched.forEach(r => {
+        const m = (r.mealType || r.meal_type || '').toLowerCase();
+        const rid = r.recipeId || r.recipe_id;
+        if (!rid) return;
+        if (m === 'desayuno' || m === 'breakfast') {
+          if (!res.desayuno.includes(rid)) res.desayuno.push(rid);
+        } else if (m === 'almuerzo' || m === 'lunch') {
+          if (!res.almuerzo.includes(rid)) res.almuerzo.push(rid);
+        } else if (m === 'cena' || m === 'dinner') {
+          if (!res.cena.includes(rid)) res.cena.push(rid);
+        }
+      });
+      res.totalRecipes = res.desayuno.length + res.almuerzo.length + res.cena.length;
+      return res;
+    },
+
+    setMealInPlan: async (dayIndex, mealType, recipeIds, weekKey, dateStr = null) => {
       const plan = LocalStore.getCollection('weeklyPlan');
       const numDay = Number(dayIndex);
-      const remaining = plan.filter(r => !(
-        Number(r.dayIndex !== undefined ? r.dayIndex : r.day_index) === numDay &&
-        (r.mealType === mealType || r.meal_type === mealType) &&
-        (weekKey ? (r.weekKey === weekKey || (!r.weekKey && weekKey === 'current')) : true)
-      ));
+      const remaining = plan.filter(r => {
+        if (!r) return false;
+        const rDay = Number(r.dayIndex !== undefined ? r.dayIndex : r.day_index);
+        const rMeal = r.mealType || r.meal_type;
+        const mealMatch = (rMeal === mealType);
+        if (!mealMatch) return true;
+
+        if (dateStr && r.date) {
+          return r.date !== dateStr;
+        }
+        if (weekKey) {
+          const wMatch = (r.weekKey === weekKey || (!r.weekKey && weekKey === 'current'));
+          return !(wMatch && rDay === numDay);
+        }
+        return rDay !== numDay;
+      });
       plan.length = 0;
       plan.push(...remaining);
       if (recipeIds && recipeIds.length > 0) {
         recipeIds.forEach(rid => {
           plan.push({
             id: LocalStore.uuid(),
+            date: dateStr || null,
             dayIndex: numDay,
             dayOfWeek: numDay,
             mealType,
@@ -1212,6 +1257,15 @@ const Api = (() => {
 
     deleteComplementCategory: async (id) => {
       LocalStore.remove('complementoCategories', id);
+      const remainingCats = LocalStore.getCollection('complementoCategories') || [];
+      const fallbackCat = remainingCats[0]?.id || 'otros';
+      const comps = LocalStore.getCollection('complementos') || [];
+      comps.forEach(c => {
+        if (c && c.category === id) {
+          c.category = fallbackCat;
+        }
+      });
+      LocalStore.save();
       return { ok: true };
     },
 
@@ -1520,8 +1574,12 @@ const Api = (() => {
     getTasksForDate: async (dateStr) => LocalAdapter.getTasksByDate(dateStr),
     getShoppingItems: async () => LocalAdapter.getShoppingList(),
     addShoppingItemsBatch: async (items) => LocalAdapter.addBulkShoppingItems(items),
+    addBulkShoppingItems: async (items, mode, ctx) => LocalAdapter.addBulkShoppingItems(items, mode, ctx),
     archiveCompletedShopping: async () => LocalAdapter.clearCheckedShoppingItems(),
-    setWeeklySlot: async (d, m, ids) => LocalAdapter.setMealInPlan(d, m, ids),
+    setWeeklySlot: async (d, m, ids, weekKey, dateStr) => LocalAdapter.setMealInPlan(d, m, ids, weekKey, dateStr),
+    getDailyMenu: async (d) => LocalAdapter.getDailyMenu(d),
+    getAvailableComplementos: async () => LocalAdapter.getAvailableComplementos(),
+    setAvailableComplementos: async (ids) => LocalAdapter.setAvailableComplementos(ids),
     updatePatientStatus: async (st, n) => LocalAdapter.savePatientStatus(st, n),
     adjustInventory: async (id, delta, n) => LocalAdapter.adjustInventoryStock(id, delta, n),
     getMedicationRestocks: async (medId) => LocalAdapter.getRestockHistory(medId),
@@ -2529,9 +2587,11 @@ const Api = (() => {
     if (error) throw new Error(traducirError(error));
     const slotMap = new Map();
     (data || []).forEach(row => {
+      if (!row) return;
       const d = Number(row.day_index);
       const m = row.meal_type;
       const rid = row.recipe_id;
+      if (isNaN(d) || !m) return;
       const key = `${d}_${m}`;
       if (!slotMap.has(key)) {
         slotMap.set(key, {
@@ -2546,18 +2606,7 @@ const Api = (() => {
       }
     });
 
-    const slotsArray = Array.from(slotMap.values());
-    (data || []).forEach(row => {
-      const d = Number(row.day_index);
-      const m = row.meal_type;
-      const rid = row.recipe_id;
-      if (!slotsArray[d]) slotsArray[d] = {};
-      if (!slotsArray[d][m]) slotsArray[d][m] = [];
-      if (rid && !slotsArray[d][m].includes(rid)) {
-        slotsArray[d][m].push(rid);
-      }
-    });
-    return slotsArray;
+    return Array.from(slotMap.values());
   };
 
   const setMealInPlan = async (dayIndex, mealType, recipeIds) => {
@@ -3197,6 +3246,7 @@ const Api = (() => {
     deleteComplementCategory: LocalAdapter.deleteComplementCategory,
     getAvailableComplementos: LocalAdapter.getAvailableComplementos,
     setAvailableComplementos: LocalAdapter.setAvailableComplementos,
+    getDailyMenu: LocalAdapter.getDailyMenu,
 
     // Compras
     getShoppingList,

@@ -1,7 +1,7 @@
 # CuidApp — Especificación de Requisitos (SRS)
 
 **Versión del documento:** 2.0
-**Fecha:** 2026-09-21
+**Fecha:** 2026-09-23
 **Sustituye a:** v1.0 (ingeniería inversa sobre el prototipo local)
 **Estado del producto:** rediseño para web pública — implementación completada, en fase de verificación y pruebas
 
@@ -248,17 +248,17 @@ Supabase
 |---|---|
 | RF-72 | **Recetario (`recetas`):** crear preparaciones con título, clasificación múltiple (desayuno, almuerzo, cena), ingredientes (uno por línea o separados por comas) y notas dietéticas libres. Edición completa y eliminación con confirmación modal. |
 | RF-73 | La clasificación de recetas no es excluyente (se puede seleccionar desayuno, almuerzo y/o cena). Filtros rápidos superiores y lista con scrollbar vertical accesible. |
-| RF-74 | **Planificación (`planificacion`):** navegación semanal (semana anterior/siguiente, hoy) con indicador de semana ISO, mes y año. Cuadrícula semanal de 7 días (Lunes a Domingo) × 3 comidas (Desayuno, Almuerzo, Cena). |
+| RF-74 | **Planificación (`planificacion`):** navegación semanal (semana anterior/siguiente, hoy) con indicador de semana ISO, mes y año. Cuadrícula semanal de 7 días (Lunes a Domingo) × 3 comidas (Desayuno, Almuerzo, Cena). Cada día del año es estrictamente independiente (almacenado por fecha exacta `dateStr`: `YYYY-MM-DD` y `weekKey`: `YYYY-Www`); lo asignado a un lunes no se propaga a otros lunes del calendario. |
 | RF-74.1 | **Celdas y reingreso:** las celdas muestran recuadro en blanco si están vacías. Al pulsar cualquier celda (esté vacía o con recetas asignadas), se despliega selector con las recetas clasificadas estrictamente para esa comida, permitiendo selección múltiple, botón Cancelar y Guardar selección. |
 | RF-75 | **Complementos (`complementos`):** catálogo organizado por categorías (Bebidas, Contornos, Snacks y categorías personalizadas). Permite crear, renombrar y eliminar categorías. Cada ítem incluye nombre, categoría, ingredientes, notas visibles en la tarjeta, casilla de selección a la izquierda para compras y botones de editar/eliminar a la derecha. |
-| RF-76 | **Complementos disponibles:** sección debajo de la cuadrícula del planificador con menú desplegable para añadir complementos por su nombre, lista de chips para consulta con scroll accesible, eliminación uno a uno con `×` o en bloque con "Eliminar todos". |
+| RF-76 | **Complementos disponibles:** sección debajo de la cuadrícula del planificador con menú desplegable para añadir complementos por su nombre, lista de tarjetas de consulta con scroll accesible, casilla interactiva de verificación (checkbox) para retirar el complemento de la lista cuando se termine la cantidad disponible, botón individual `×` y vaciado en bloque con "Eliminar todos". |
 | RF-77 | **Generación preliminar de compras:** consolidar ingredientes (desde plan semanal o complementos seleccionados) mostrando obligatoriamente el origen entre paréntesis, incluso si proviene de una sola receta o complemento (ej. `Tomate (Pollo guisado)`). Vista preliminar con ítems seleccionados, opción de desmarcar, campo rápido para añadir ingredientes manuales y scroll accesible. |
-| RF-77.1 | **Resolución de conflictos de envío:** si ya se había enviado una lista para esa semana o día, se muestra un diálogo con 3 opciones: `[Sustituir]`, `[Complementar]` o `[Cancelar]`. |
+| RF-77.1 | **Resolución de conflictos de envío:** si ya se había enviado una lista para esa semana o día, se muestra un diálogo con 3 opciones: `[Sustituir]`, `[Complementar]` o `[Cancelar]`, con transición interna de vista sin cierres prematuros. |
 | RF-78 | **Lista de compras (`compras`):** lista consolidada de ingredientes con orígenes entre paréntesis, entrada manual de productos por teclado y casillas para marcar/desmarcar individualmente. Scrollbar vertical accesible. |
 | RF-79 | **Marcado de compra:** opciones para marcar `✓ Comprado (eliminar seleccionados)` y `✅ Comprado todos`, eliminando efectivamente los productos de la lista de compras y de los pendientes. |
 | RF-80 | **Envío por WhatsApp:** exportar la lista de compras con formato a través de WhatsApp (`wa.me`). |
 | RF-81 | **Copiar lista:** botón para copiar la lista de compras al portapapeles con confirmación visual (toast) para pegar en cualquier bloc de notas o aplicación. |
-| RF-82 | **Aviso permanente en Dashboard:** tarjeta fija de compra en el Dashboard que indica la cantidad de ingredientes pendientes de compra o *"0 pendientes · Lista de compra al día"*, enlazada directamente a la pestaña Compras. |
+| RF-82 | **Avisos y sincronización en Dashboard:** tarjeta permanente **"🍽️ MENÚ DE HOY"** (con conteo en vivo de recetas asignadas para hoy y enlace que abre la Planificación en la semana y día actual), KPI de recetas en la cabecera del Dashboard, y tarjeta fija de compra que indica la cantidad de ingredientes pendientes o *"0 pendientes · Lista de compra al día"*, enlazada directamente a la pestaña Compras. |
 | RF-83 | Conexión e integración con los botones del Dashboard, Header, barra inferior y menú "Más" con soporte para navegación a sub-pestañas específicas (`App.navigateTo('food', subTab)`). |
 
 ### 3.11 Alertas derivadas — `js/ui.js`

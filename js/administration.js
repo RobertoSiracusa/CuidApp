@@ -496,3 +496,6 @@ const AdministrationModule = (() => {
     undoAdministration
   };
 })();
+
+// Exponer globalmente en window para el router (app.js) y accesos directos
+window.AdministrationModule = AdministrationModule;

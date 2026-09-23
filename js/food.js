@@ -129,7 +129,9 @@ const FoodModule = (() => {
 
   // Normalizador de plan
   const normalizePlan = (raw) => {
-    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw)) {
+      return raw.filter(s => s && typeof s === 'object' && (s.dayIndex !== undefined || s.dayOfWeek !== undefined));
+    }
     if (raw && typeof raw === 'object') {
       const arr = [];
       Object.keys(raw).forEach(day => {
@@ -259,8 +261,6 @@ const FoodModule = (() => {
       <span class="recipe-type-badge">${t.icon} ${Api.escapeHtml(t.label)}</span>
     `).join(' ');
 
-    const ingText = (r.ingredients || []).map(i => Api.escapeHtml(i.name || i)).join(', ');
-
     return `
       <div class="recipe-card" data-id="${Api.escapeHtml(r.id)}" style="padding:12px 14px;margin-bottom:8px;">
         <div class="flex items-center justify-between" style="gap:8px;">
@@ -279,18 +279,6 @@ const FoodModule = (() => {
             </button>
           </div>
         </div>
-
-        ${ingText ? `
-          <div class="text-xs text-sec" style="margin-top:8px;line-height:1.4;">
-            🥬 <strong>Ingredientes:</strong> ${ingText}
-          </div>
-        ` : ''}
-
-        ${r.notes ? `
-          <div class="text-xs text-muted" style="margin-top:4px;font-style:italic;">
-            📝 ${Api.escapeHtml(r.notes)}
-          </div>
-        ` : ''}
       </div>
     `;
   };
@@ -438,9 +426,11 @@ const FoodModule = (() => {
   // ═══════════════════════════════════════════════════════════════
   const renderPlanificacion = async (el) => {
     const weekInfo = getWeekInfo(currentMonday);
+    const sevenDays = get7DaysFromMonday(currentMonday);
+    const sevenDates = sevenDays.map(d => d.toISOString().split('T')[0]);
 
     const [planRes, recipesRes, compsRes, availRes] = await Promise.all([
-      Api.getWeeklyPlan(weekInfo.weekKey),
+      Api.getWeeklyPlan(weekInfo.weekKey, sevenDates),
       Api.getRecipes(),
       Api.getComplementos(),
       Api.getAvailableComplementos()
@@ -449,15 +439,14 @@ const FoodModule = (() => {
     cachedPlan = normalizePlan(planRes.data || planRes);
     cachedRecipes = recipesRes.data || [];
     cachedComplementos = compsRes.data || [];
-    cachedAvailableComplementos = availRes.data || [];
+    cachedAvailableComplementos = Array.isArray(availRes) ? availRes : (availRes?.data || []);
 
     const recipeMap = new Map(cachedRecipes.map(r => [r.id, r]));
-    const sevenDays = get7DaysFromMonday(currentMonday);
     const todayStr = Api.todayStr();
 
     // Columnas de la cuadrícula: Lunes a Domingo
     const headersHtml = sevenDays.map((d, idx) => {
-      const dStr = d.toISOString().split('T')[0];
+      const dStr = sevenDates[idx];
       const isToday = dStr === todayStr;
       return `
         <th class="${isToday ? 'today-col' : ''}">
@@ -470,9 +459,11 @@ const FoodModule = (() => {
     // Filas de comidas: Desayuno, Almuerzo, Cena
     const rowsHtml = MEAL_TYPES.map(mt => {
       const cellsHtml = sevenDays.map((_, dayIdx) => {
-        // Encontrar asignaciones del slot
+        const dStr = sevenDates[dayIdx];
+        // Encontrar asignaciones del slot aisladas por fecha exacta o día de la semana
         const slot = cachedPlan.find(s => (
-          (Number(s.dayIndex) === dayIdx || Number(s.dayOfWeek) === dayIdx) &&
+          s &&
+          ((s.date && s.date === dStr) || (!s.date && Number(s.dayIndex ?? s.dayOfWeek) === dayIdx)) &&
           (s.mealType === mt.id || s.mealType === mt.legacyId)
         ));
         const recipeIds = slot?.recipeIds || [];
@@ -482,14 +473,14 @@ const FoodModule = (() => {
 
         return `
           <td>
-            <div class="planner-cell-box ${isEmpty ? 'empty' : ''}" data-day="${dayIdx}" data-meal="${mt.id}" title="Toca para agregar o modificar recetas">
+            <div class="planner-cell-box ${isEmpty ? 'empty' : ''}" data-day="${dayIdx}" data-date="${dStr}" data-meal="${mt.id}" title="Toca para agregar o modificar recetas">
               ${isEmpty ? `
                 <span style="opacity:0.4;font-size:0.72rem;">+ asignar</span>
               ` : `
                 ${slotRecipes.map(r => `
                   <div class="planner-recipe-tag">
                     <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${Api.escapeHtml(r.name)}</span>
-                    <span class="rm-tag-btn" data-day="${dayIdx}" data-meal="${mt.id}" data-recipe-id="${Api.escapeHtml(r.id)}" title="Quitar">×</span>
+                    <span class="rm-tag-btn" data-day="${dayIdx}" data-date="${dStr}" data-meal="${mt.id}" data-recipe-id="${Api.escapeHtml(r.id)}" title="Quitar">×</span>
                   </div>
                 `).join('')}
               `}
@@ -511,7 +502,7 @@ const FoodModule = (() => {
 
     // Complementos disponibles
     const availItems = cachedAvailableComplementos
-      .map(id => cachedComplementos.find(c => c.id === id))
+      .map(id => cachedComplementos.find(c => String(c.id) === String(id)))
       .filter(Boolean);
 
     el.innerHTML = `
@@ -571,8 +562,8 @@ const FoodModule = (() => {
       <div class="available-comps-card">
         <div class="flex items-center justify-between" style="margin-bottom:8px;">
           <div>
-            <div style="font-weight:800;font-size:0.9rem;color:var(--text);">🥤 Complementos disponibles</div>
-            <div class="text-xs text-muted">Selecciona complementos del menú para tenerlos disponibles en consulta</div>
+            <div style="font-weight:800;font-size:0.92rem;color:var(--text);">🥤 Complementos disponibles</div>
+            <div class="text-xs text-muted">Selecciona complementos del menú. Marca la casilla cuando se termine la cantidad disponible para retirarlo.</div>
           </div>
           ${availItems.length > 0 ? `
             <button class="btn btn-ghost btn-xs text-critical" id="btn-clear-all-avail">
@@ -581,35 +572,44 @@ const FoodModule = (() => {
           ` : ''}
         </div>
 
-        <!-- Desplegable solo con el nombre -->
+        <!-- Desplegable para seleccionar complemento -->
         <div style="display:flex;gap:8px;margin-top:8px;">
           <select class="form-select" id="select-add-complemento" style="flex:1;">
-            <option value="">-- Seleccionar complemento para agregar --</option>
+            <option value="">-- Seleccionar complemento para agregar a disponibles --</option>
             ${cachedComplementos.map(c => `
               <option value="${Api.escapeHtml(c.id)}">${Api.escapeHtml(c.name)}</option>
             `).join('')}
           </select>
         </div>
 
-        <!-- Lista de complementos disponibles mostrados con scrollbar accesible -->
-        <div class="available-chip-list accessible-scroll" style="max-height:120px;margin-top:10px;">
+        <!-- Lista de complementos disponibles mostrados con casilla y scrollbar accesible -->
+        <div class="accessible-scroll" style="max-height:160px;margin-top:12px;">
           ${availItems.length === 0 ? `
-            <div class="text-xs text-muted" style="padding:8px 0;">No hay complementos marcados como disponibles. Selecciona uno del menú desplegable.</div>
-          ` : availItems.map(c => `
-            <div class="available-chip">
-              <span>${Api.escapeHtml(c.name)}</span>
-              <span class="rm-chip-btn" data-id="${Api.escapeHtml(c.id)}" title="Quitar">×</span>
+            <div class="text-xs text-muted" style="padding:14px;text-align:center;background:var(--bg-glass);border-radius:var(--r-md);border:1px dashed var(--border-subtle);">
+              No hay complementos marcados como disponibles actualmente.<br>Selecciona uno en el menú superior para tenerlo en consulta permanente.
             </div>
-          `).join('')}
+          ` : `
+            <div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:8px;">
+              ${availItems.map(c => `
+                <div class="avail-comp-card-item" data-id="${Api.escapeHtml(c.id)}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--r-md);">
+                  <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;margin:0;" title="Marcar cuando se termine la cantidad disponible">
+                    <input type="checkbox" class="chk-retire-comp" data-id="${Api.escapeHtml(c.id)}" style="width:18px;height:18px;cursor:pointer;">
+                    <span style="font-weight:700;font-size:0.875rem;color:var(--text);">${Api.escapeHtml(c.name)}</span>
+                  </label>
+                  <span class="rm-chip-btn" data-id="${Api.escapeHtml(c.id)}" title="Quitar inmediatamente" style="cursor:pointer;padding:2px 6px;color:var(--text-muted);font-size:1.1rem;line-height:1;">×</span>
+                </div>
+              `).join('')}
+            </div>
+          `}
         </div>
       </div>
     `;
 
     bindNavTabs(el);
-    bindPlanificacionEvents(el, weekInfo);
+    bindPlanificacionEvents(el, weekInfo, sevenDates);
   };
 
-  const bindPlanificacionEvents = (el, weekInfo) => {
+  const bindPlanificacionEvents = (el, weekInfo, sevenDates = []) => {
     // Navegación de semanas
     el.querySelector('#btn-prev-week')?.addEventListener('click', () => {
       currentMonday.setDate(currentMonday.getDate() - 7);
@@ -634,7 +634,8 @@ const FoodModule = (() => {
 
         const day = parseInt(box.getAttribute('data-day'), 10);
         const meal = box.getAttribute('data-meal');
-        showCellRecipeSelectorModal(day, meal, weekInfo);
+        const dateStr = box.getAttribute('data-date') || sevenDates[day];
+        showCellRecipeSelectorModal(day, meal, weekInfo, dateStr);
       });
     });
 
@@ -645,15 +646,17 @@ const FoodModule = (() => {
         const day = parseInt(span.getAttribute('data-day'), 10);
         const meal = span.getAttribute('data-meal');
         const recipeId = span.getAttribute('data-recipe-id');
+        const dateStr = span.getAttribute('data-date') || sevenDates[day];
 
         const slot = cachedPlan.find(s => (
-          (Number(s.dayIndex) === day || Number(s.dayOfWeek) === day) &&
+          s &&
+          ((s.date && s.date === dateStr) || (!s.date && Number(s.dayIndex ?? s.dayOfWeek) === day)) &&
           (s.mealType === meal || s.mealType === (MEAL_TYPES.find(m => m.id === meal)?.legacyId))
         ));
         if (!slot) return;
 
         const newIds = (slot.recipeIds || []).filter(id => id !== recipeId);
-        await Api.setWeeklySlot(day, meal, newIds, weekInfo.weekKey);
+        await Api.setWeeklySlot(day, meal, newIds, weekInfo.weekKey, dateStr);
         render();
       });
     });
@@ -662,19 +665,36 @@ const FoodModule = (() => {
     el.querySelector('#select-add-complemento')?.addEventListener('change', async (e) => {
       const compId = e.target.value;
       if (!compId) return;
-      if (!cachedAvailableComplementos.includes(compId)) {
-        cachedAvailableComplementos.push(compId);
-        await Api.setAvailableComplementos(cachedAvailableComplementos);
-        Ui.toast('Complemento agregado a disponibles', 'success');
-        render();
+      const strId = String(compId);
+      if (cachedAvailableComplementos.some(id => String(id) === strId)) {
+        Ui.toast('Este complemento ya está en la lista de disponibles', 'info');
+        e.target.value = '';
+        return;
       }
+      cachedAvailableComplementos.push(strId);
+      await Api.setAvailableComplementos(cachedAvailableComplementos);
+      Ui.toast('Complemento agregado a disponibles', 'success');
+      render();
     });
 
-    // Complementos disponibles: quitar uno a uno
+    // Complementos disponibles: casilla interactiva para retirar cuando se agote la cantidad
+    el.querySelectorAll('.chk-retire-comp').forEach(chk => {
+      chk.addEventListener('change', async () => {
+        const id = chk.getAttribute('data-id');
+        const comp = cachedComplementos.find(c => String(c.id) === String(id));
+        const name = comp?.name || 'Complemento';
+        cachedAvailableComplementos = cachedAvailableComplementos.filter(cId => String(cId) !== String(id));
+        await Api.setAvailableComplementos(cachedAvailableComplementos);
+        Ui.toast(`"${name}" marcado como agotado y retirado`, 'info');
+        render();
+      });
+    });
+
+    // Complementos disponibles: quitar inmediatamente con ×
     el.querySelectorAll('.rm-chip-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
-        cachedAvailableComplementos = cachedAvailableComplementos.filter(cId => cId !== id);
+        cachedAvailableComplementos = cachedAvailableComplementos.filter(cId => String(cId) !== String(id));
         await Api.setAvailableComplementos(cachedAvailableComplementos);
         render();
       });
@@ -684,7 +704,7 @@ const FoodModule = (() => {
     el.querySelector('#btn-clear-all-avail')?.addEventListener('click', async () => {
       cachedAvailableComplementos = [];
       await Api.setAvailableComplementos([]);
-      Ui.toast('Se quitaron todos los complementos disponibles', 'info');
+      Ui.toast('Se retiraron todos los complementos disponibles', 'info');
       render();
     });
 
@@ -701,23 +721,26 @@ const FoodModule = (() => {
    * - Muestra pre-marcadas las recetas ya seleccionadas
    * - Botón Cancelar y Guardar selección
    */
-  const showCellRecipeSelectorModal = (dayIndex, mealType, weekInfo) => {
+  const showCellRecipeSelectorModal = (dayIndex, mealType, weekInfo, dateStr = null) => {
     const mealObj = MEAL_TYPES.find(m => m.id === mealType) || { label: mealType, icon: '🍽️' };
     const dayName = DAYS_FULL[dayIndex];
 
     // Recetas filtradas estrictamente por la categoría
     const suitableRecipes = cachedRecipes.filter(r => recipeMatchesMeal(r, mealType));
 
-    // Recetas actualmente asignadas
+    // Recetas actualmente asignadas (por fecha exacta o por día)
     const slot = cachedPlan.find(s => (
-      (Number(s.dayIndex) === dayIndex || Number(s.dayOfWeek) === dayIndex) &&
+      s &&
+      ((dateStr && s.date && s.date === dateStr) || (!s.date && Number(s.dayIndex ?? s.dayOfWeek) === dayIndex)) &&
       (s.mealType === mealType || s.mealType === mealObj.legacyId)
     ));
     const currentRecipeIds = new Set(slot?.recipeIds || []);
 
+    const dateHeader = dateStr ? ` · ${dateStr}` : '';
+
     const contentHtml = `
       <div style="margin-bottom:12px;font-size:0.875rem;color:var(--text-sec);">
-        Selecciona las recetas para: <strong>${dayName} — ${mealObj.icon} ${mealObj.label}</strong>
+        Selecciona las recetas para: <strong>${dayName}${dateHeader} — ${mealObj.icon} ${mealObj.label}</strong>
       </div>
 
       <div class="accessible-scroll" style="max-height:280px;display:flex;flex-direction:column;gap:6px;">
@@ -743,7 +766,7 @@ const FoodModule = (() => {
       const checkedBoxes = document.querySelectorAll('.sel-slot-recipe-check:checked');
       const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
 
-      const res = await Api.setWeeklySlot(dayIndex, mealType, selectedIds, weekInfo.weekKey);
+      const res = await Api.setWeeklySlot(dayIndex, mealType, selectedIds, weekInfo.weekKey, dateStr);
       if (res.error) {
         Ui.toast(res.error, 'error');
         return false;
@@ -867,13 +890,13 @@ const FoodModule = (() => {
         return false;
       }
 
-      // Comprobar si ya se envió lista para este contexto
-      const alreadySent = checkAlreadySent(source, weekKey);
+      // Comprobar si ya se envió lista para este contexto (en historial o en la lista de compras)
+      const alreadySent = await checkAlreadySent(source, weekKey);
 
       if (alreadySent) {
-        // Mostrar diálogo de conflicto: Sustituir / Complementar / Cancelar
-        showConflictModal(source, weekKey, selectedItems);
-        return true; // cierra modal preliminar
+        // Transicionar la vista del modal al diálogo de conflicto sin cerrarlo prematuramente
+        transitionToConflictView(source, weekKey, selectedItems);
+        return false; // Retorna false para que Ui.confirmModal no cierre el modal
       } else {
         // Agregar directamente
         await finalizeShoppingSend(source, weekKey, selectedItems, 'append');
@@ -930,18 +953,30 @@ const FoodModule = (() => {
     }, 50);
   };
 
-  const checkAlreadySent = (source, weekKey) => {
+  const checkAlreadySent = async (source, weekKey) => {
     try {
       const raw = localStorage.getItem('cuidapp_food_sent_history');
       const history = raw ? JSON.parse(raw) : { weeks: {}, days: {} };
-      if (source === 'plan' && weekKey) {
-        return !!history.weeks[weekKey];
+      if (source === 'plan' && weekKey && history.weeks && history.weeks[weekKey]) {
+        return true;
       }
-      if (source === 'complemento') {
-        const today = Api.todayStr();
-        return !!history.days[today];
+      if (source === 'complemento' && history.days && history.days[Api.todayStr()]) {
+        return true;
       }
     } catch (e) {}
+
+    // Doble verificación: comprobar si ya existen ítems de esa semana o fuente en shoppingList
+    try {
+      const res = await Api.getShoppingList();
+      const items = res.data || res || [];
+      if (source === 'plan' && weekKey) {
+        return items.some(i => i && i.source === 'plan' && i.weekKey === weekKey);
+      }
+      if (source === 'complemento') {
+        return items.some(i => i && i.source === 'complemento');
+      }
+    } catch (e) {}
+
     return false;
   };
 
@@ -956,48 +991,57 @@ const FoodModule = (() => {
   };
 
   /**
-   * Modal de resolución de conflicto:
+   * Transición del modal a resolución de conflicto:
    * "¿El nuevo envío sustituye el anterior o lo complementa?"
    * Opciones: [Sustituir] [Complementar] [Cancelar]
    */
-  const showConflictModal = (source, weekKey, selectedItems) => {
+  const transitionToConflictView = (source, weekKey, selectedItems) => {
+    const titleEl = document.getElementById('modal-title');
+    const body = document.getElementById('modal-body');
+    const confirmBtn = document.getElementById('modal-confirm-btn');
+    const cancelBtn = document.getElementById('modal-cancel-btn');
+
+    if (titleEl) titleEl.textContent = '⚠️ Envío Existente';
+    if (confirmBtn) confirmBtn.style.display = 'none';
+    if (cancelBtn) cancelBtn.style.display = 'none';
+
     const msg = source === 'plan'
       ? `Ya se ha enviado una lista de compras para esta semana previamente.<br><br>¿Deseas que este nuevo envío <strong>sustituya</strong> la lista anterior o que la <strong>complemente</strong>?`
       : `Ya se ha generado una lista de complementos en el día de hoy.<br><br>¿Deseas que este nuevo envío <strong>sustituya</strong> la anterior o que la <strong>complemente</strong>?`;
 
-    const contentHtml = `
-      <div style="font-size:0.92rem;color:var(--text);line-height:1.5;margin-bottom:16px;">
-        ${msg}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button class="btn btn-primary btn-full" id="btn-conflict-substitute">
-          🔄 Sustituir lista anterior
-        </button>
-        <button class="btn btn-secondary btn-full" id="btn-conflict-complement">
-          ➕ Complementar (unir a la existente)
-        </button>
-        <button class="btn btn-ghost btn-full text-muted" id="btn-conflict-cancel">
-          ✕ Cancelar
-        </button>
-      </div>
-    `;
+    if (body) {
+      body.innerHTML = `
+        <div style="font-size:0.92rem;color:var(--text);line-height:1.5;margin-bottom:18px;">
+          ${msg}
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <button type="button" class="btn btn-primary btn-full" id="btn-conflict-substitute" style="padding:12px;font-weight:700;">
+            🔄 Sustituir lista anterior
+          </button>
+          <button type="button" class="btn btn-secondary btn-full" id="btn-conflict-complement" style="padding:12px;font-weight:700;">
+            ➕ Complementar (unir a la existente)
+          </button>
+          <button type="button" class="btn btn-ghost btn-full text-muted" id="btn-conflict-cancel" style="padding:10px;">
+            ✕ Cancelar
+          </button>
+        </div>
+      `;
 
-    Ui.showModal('⚠️ Envío Existente', contentHtml, null, false);
+      document.getElementById('btn-conflict-substitute')?.addEventListener('click', async () => {
+        Ui.closeModal();
+        await finalizeShoppingSend(source, weekKey, selectedItems, 'replace');
+      });
 
-    document.getElementById('btn-conflict-substitute')?.addEventListener('click', async () => {
-      Ui.closeModal();
-      await finalizeShoppingSend(source, weekKey, selectedItems, 'replace');
-    });
+      document.getElementById('btn-conflict-complement')?.addEventListener('click', async () => {
+        Ui.closeModal();
+        await finalizeShoppingSend(source, weekKey, selectedItems, 'append');
+      });
 
-    document.getElementById('btn-conflict-complement')?.addEventListener('click', async () => {
-      Ui.closeModal();
-      await finalizeShoppingSend(source, weekKey, selectedItems, 'append');
-    });
-
-    document.getElementById('btn-conflict-cancel')?.addEventListener('click', () => {
-      Ui.closeModal();
-      Ui.toast('Envío cancelado', 'info');
-    });
+      document.getElementById('btn-conflict-cancel')?.addEventListener('click', () => {
+        Ui.closeModal();
+        Ui.toast('Envío cancelado', 'info');
+      });
+    }
   };
 
   const finalizeShoppingSend = async (source, weekKey, selectedItems, mode) => {
@@ -1047,16 +1091,16 @@ const FoodModule = (() => {
               <span>${Api.escapeHtml(cat.label)}</span>
               <span class="text-xs text-muted" style="font-weight:400;">(${items.length})</span>
             </div>
-            ${cat.isCustom ? `
-              <div style="display:flex;gap:4px;">
-                <button class="btn btn-ghost btn-xs btn-rename-cat" data-id="${Api.escapeHtml(cat.id)}" data-label="${Api.escapeHtml(cat.label)}" title="Renombrar categoría">
-                  ✏️
-                </button>
+            <div style="display:flex;gap:4px;">
+              <button class="btn btn-ghost btn-xs btn-rename-cat" data-id="${Api.escapeHtml(cat.id)}" data-label="${Api.escapeHtml(cat.label)}" title="Renombrar categoría">
+                ✏️
+              </button>
+              ${cat.isCustom ? `
                 <button class="btn btn-ghost btn-xs text-critical btn-del-cat" data-id="${Api.escapeHtml(cat.id)}" data-label="${Api.escapeHtml(cat.label)}" title="Eliminar categoría">
                   🗑️
                 </button>
-              </div>
-            ` : ''}
+              ` : ''}
+            </div>
           </div>
 
           <div style="display:flex;flex-direction:column;gap:6px;">
@@ -1680,12 +1724,23 @@ const FoodModule = (() => {
     },
     setTab: (t) => {
       // Normalizar tab
-      if (t === 'recipes' || t === 'recetario') activeTab = 'recetas';
-      else if (t === 'planner' || t === 'today') activeTab = 'planificacion';
-      else if (t === 'shopping') activeTab = 'compras';
-      else activeTab = t;
+      if (t === 'recipes' || t === 'recetario') {
+        activeTab = 'recetas';
+      } else if (t === 'planner' || t === 'planificacion' || t === 'today') {
+        activeTab = 'planificacion';
+        currentMonday = getMondayOfWeek(new Date());
+      } else if (t === 'shopping' || t === 'compras') {
+        activeTab = 'compras';
+      } else if (t === 'complementos') {
+        activeTab = 'complementos';
+      } else {
+        activeTab = t;
+      }
     },
     showAddRecipeModal,
     showAddComplementoModal
   };
 })();
+
+// Exponer globalmente en window para el router (app.js) y accesos directos
+window.FoodModule = FoodModule;

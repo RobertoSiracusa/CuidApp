@@ -2,7 +2,8 @@
 
 **Destinatario:** Antigravity IDE (agente de desarrollo)
 **Documento de referencia:** `docs/ESPECIFICACION-REQUISITOS.md` v2.0
-**Fecha:** 2026-09-21
+**Fecha:** 2026-09-23
+**Estado del plan:** Implementación completada (incluyendo Menú en 4 pestañas y sincronización en Dashboard); en fase de verificación y pruebas.
 
 Este documento es **ejecutable**. Cada fase indica qué archivos tocar, qué escribir y cómo saber que
 terminó. Ejecuta las fases **en orden**: cada una depende de la anterior.
@@ -1355,10 +1356,46 @@ ningún botón para descartarla: invitaría a ocultar un stock agotado en lugar 
 | 8 | `inventory.js` | Leer de `inventory_items_view`; escribir en `inventory_items`. Si `days_remaining` es `null`, mostrar **"Recopilando datos"** (RF-55). Los ajustes de stock van por `Api.adjustInventory()` (RPC), nunca por `update` directo |
 | 9 | `medications.js` | Leer de `medications_view`; escribir en `medications`. Añadir la gestión de horarios de dosis (RF-39, RF-40) |
 | 10 | `agenda.js` | Migración directa. Renombrar `date`→`appt_date`, `time`→`appt_time` |
-| 11 | `food.js` | El más extenso. El plan semanal pasa de objeto anidado a tabla `weekly_plan`; los ingredientes, a tablas propias. **La consolidación por fecha (`getIngredientsFromPlanByDay`, `data.js:714`) se conserva tal cual**: es lógica de presentación, se ejecuta en el cliente sobre los datos ya cargados |
+| 11 | `food.js` | **Implementación completada.** Reestructurado en 4 pestañas en español (`Recetas`, `Planificación`, `Complementos`, `Compras`). Aislamiento unívoco de días del año por fecha exacta (`dateStr`: `YYYY-MM-DD`) y `weekKey` (`YYYY-Www`). Complementos disponibles con casilla interactiva de retiro al agotarse. Generación de lista de compras con diálogo interactivo de conflicto (`[Sustituir]`, `[Complementar]`, `[Cancelar]`) y tarjeta permanente de Menú de Hoy en Dashboard sincronizada. Ver §4.2.1 |
 
-**Terminado cuando:** todos los módulos leen y escriben en Supabase, y una búsqueda de
-`localStorage` en `js/` solo la encuentra dentro de `vendor/supabase.js`.
+### 4.2.1 Arquitectura e Implementación de Menú y Alimentación (js/food.js)
+
+La sección **Menú** se organiza en 4 pestañas en español que resuelven de extremo a extremo el ciclo de alimentación:
+
+1. **Pestaña Recetas (`recetas`)**:
+   - Botón **"+ Agregar Receta"**: abre modal con campos opcionales (título, notas, clasificación múltiple no excluyente `Desayuno`, `Almuerzo` y/o `Cena`, e ingredientes ingresados por línea o separados por comas).
+   - Filtros rápidos por tiempo de comida (`Todas`, `Desayuno`, `Almuerzo`, `Cena`).
+   - Scrollbar vertical accesible (`.accessible-scroll`).
+   - Edición integral de todos los campos y eliminación con modal de confirmación.
+
+2. **Pestaña Planificación (`planificacion`)**:
+   - Barra de navegación semanal con cálculo ISO (`Semana {Nº} · {Mes} {Año}`), botones `◀ Anterior`, `Siguiente ▶` y acceso rápido a `Hoy`.
+   - Cuadrícula de 7 días (Lunes a Domingo) por 3 comidas (`Desayuno`, `Almuerzo`, `Cena`), destacando la columna de la fecha actual.
+   - **Aislamiento por día del año independiente**: Cada slot se almacena con su fecha exacta del calendario (`dateStr`: `YYYY-MM-DD`), `weekKey` (`YYYY-Www`), `mealType` y `dayIndex`. Lo programado para el lunes de una semana queda confinado exclusivamente a ese día y **no** se propaga al siguiente lunes ni a otras semanas.
+   - **Reingreso a celdas**: Permite hacer clic en cualquier celda para agregar o retirar recetas, filtrando estrictamente las preparaciones compatibles con la categoría de la celda y pre-marcando las asignadas.
+   - **Complementos disponibles**: Menú desplegable para añadir complementos a una lista de consulta permanente. Cada ítem incluye una **casilla de verificación interactiva** (checkbox) para que el cuidador lo retire al terminarse la cantidad disponible con animación suave y confirmación toast, además de botón `×` y vaciado en bloque.
+   - **Generar lista de compras**: Consolida los ingredientes de la semana mostrando **siempre la receta de origen entre paréntesis** (ej. `Tomate (Pollo guisado)`). Modal preliminar con ingredientes marcados por defecto, campo para escribir ítems extra y scrollbar accesible.
+   - **Diálogo de conflicto estable**: Si ya existía un envío previo para esa semana/día, se transiciona internamente la vista del modal ofreciendo las opciones `[🔄 Sustituir lista anterior]`, `[➕ Complementar (unir a la existente)]` y `[✕ Cancelar]` sin cierres prematuros.
+
+3. **Pestaña Complementos (`complementos`)**:
+   - Categorías dinámicas (`Bebidas`, `Contornos`, `Snacks` y personalizadas) con creación, renombrado y eliminación.
+   - Formulario de complementos con visualización clara de notas dietéticas e ingredientes.
+   - Selección lateral para compras y generación de lista consolidada con orígenes entre paréntesis.
+
+4. **Pestaña Compras (`compras`)**:
+   - Lista consolidada definitiva con origen entre paréntesis para cada producto.
+   - Campo superior para añadir productos manuales escribiendo con el teclado.
+   - Canales de exportación: WhatsApp (`wa.me`) con formato estructurado y botón para copiar al portapapeles.
+   - Marcado de compra: eliminación de ítems seleccionados (`✓ Comprado`) o compra de la lista completa (`✅ Comprado todos`).
+
+5. **Sincronización con Dashboard (`js/dashboard.js`)**:
+   - Tarjeta **"🍽️ MENÚ DE HOY"** y KPI superior permanentemente visibles en la pantalla principal.
+   - Conteo exacto de todas las recetas asignadas para la fecha de hoy (`X recetas`).
+   - Vínculo directo: hacer clic en la tarjeta o en el KPI navega a `App.navigateTo('food', 'planificacion')`, la cual restablece la cuadrícula a la semana actual con el día de hoy visible y destacado.
+   - Actualización reactiva inmediata al modificar la planificación de hoy.
+
+**Terminado cuando:** todos los módulos leen y escriben en Supabase (o LocalAdapter en modo local), y una búsqueda de
+`localStorage` en `js/` solo la encuentra dentro de `vendor/supabase.js` o persistencia local declarada.
 
 ---
 
@@ -1567,6 +1604,15 @@ Sin pruebas automatizadas. Recorre esta lista sobre el despliegue real, desde un
       con tu nombre.
 - [ ] **Tareas recurrentes:** crear una plantilla, recargar la app al día siguiente y comprobar que
       la tarea se generó. Recargar de nuevo: **no** se duplica.
+- [ ] **Menú y Alimentación (4 pestañas y Dashboard):**
+  - [x] Pestaña Recetas: agregar receta con campos opcionales, clasificación múltiple (`Desayuno`, `Almuerzo`, `Cena`), edición y confirmación de borrado.
+  - [x] Pestaña Planificación: navegación de semanas (ISO), cuadrícula de 7 días, reingreso a celdas con filtro estricto por categoría.
+  - [x] Días del año independientes: lo asignado para un lunes no se repite en el siguiente lunes.
+  - [x] Complementos disponibles: selección visible en lista y casilla interactiva (checkbox) para retirar al terminarse la cantidad disponible.
+  - [x] Generar compras: consolidación con origen entre paréntesis siempre, adición de ingredientes extra y diálogo de conflicto (`[Sustituir]`, `[Complementar]`, `[Cancelar]`).
+  - [x] Pestaña Complementos: gestión dinámica de categorías (crear, renombrar, eliminar), notas visibles y envío a compras.
+  - [x] Pestaña Compras: productos con orígenes entre paréntesis, entrada manual por teclado, exportación a WhatsApp y portapapeles, y compra parcial o total.
+  - [x] Dashboard: tarjeta "MENÚ DE HOY" y KPI siempre visibles con el conteo de recetas de hoy, enlace directo a la semana actual en Planificación y actualización reactiva al editar el menú.
 
 ### iPhone / Safari
 
@@ -1641,7 +1687,7 @@ El orden importa: no hay módulos ES ni gestor de dependencias.
 | 1 | RF-100..102, RNF-28..29, RNF-50, RF-43, RF-54..55, RF-64 |
 | 2 | RF-01..06, RNF-17 |
 | 3 | RF-84..88, RNF-43, RNF-47, RNF-31 |
-| 4 | RF-12..38, RF-49..99 |
+| 4 | RF-12..38, RF-49..99 (incluye RF-72..83: Menú en 4 pestañas y sincronización con Dashboard) |
 | 5 | RF-39..48, RF-103..106, RF-07..11 |
 | 6 | RNF-08..16, RNF-18..21 |
 | 7 | Continuidad de datos de v1 |
