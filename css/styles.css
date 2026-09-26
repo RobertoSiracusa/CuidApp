@@ -1927,3 +1927,103 @@ button, .btn, .nav-btn, .chip, .task-check, .inv-step-btn, .shop-check, .more-it
   text-decoration: line-through;
 }
 
+/* ═══════════════════════════════════════════════════════════════
+   Gestión Insumos (v2 — Fases 6..11)
+   ═══════════════════════════════════════════════════════════════ */
+
+/* Semáforo de 4 estados */
+.sem-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--r-full);
+}
+.sem-normal {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--stable);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.sem-low {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--alert);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.sem-urgent, .sem-exhausted {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--critical);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.sem-unknown, .sem-pending {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--text-muted);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+/* Relevo táctil (Áreas >= 44px) */
+.relay-count-input {
+  min-height: 44px;
+  min-width: 70px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  border: 1.5px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  touch-action: manipulation;
+}
+.relay-count-input:focus {
+  border-color: var(--primary);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.25);
+}
+
+/* Chips PAO para apertura rápida */
+.pao-chip {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--r-full);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.pao-chip:hover, .pao-chip.selected {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* Tarjetas de Kanban de compras */
+.kanban-item-card {
+  padding: 10px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  margin-bottom: 8px;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.kanban-item-card:hover {
+  border-color: var(--border);
+  transform: translateY(-1px);
+}
+.kanban-item-card.urgent {
+  border-left: 3px solid var(--critical);
+}
+.kanban-item-card.delayed {
+  border: 1px solid var(--critical);
+  background: rgba(239, 68, 68, 0.05);
+}
+
+/* Foto de relevo */
+#relay-photo-preview img {
+  border-radius: var(--r-sm);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+

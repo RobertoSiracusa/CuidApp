@@ -466,6 +466,18 @@ const RolesModule = (() => {
       Ui.toast('Turno iniciado con éxito', 'success');
       render();
       DashboardModule?.render();
+      setTimeout(() => {
+        Ui.confirm(
+          '🔄 Relevo de Habitación',
+          '¿Deseas realizar el Relevo de Habitación ahora para verificar los insumos críticos en el punto de uso?',
+          () => {
+            App.navigateTo('inventory');
+            if (typeof InventoryModule !== 'undefined' && InventoryModule.switchTab) {
+              InventoryModule.switchTab('relay');
+            }
+          }
+        );
+      }, 350);
       return true;
     });
   };
@@ -481,6 +493,18 @@ const RolesModule = (() => {
       Ui.toast('Turno iniciado con éxito', 'success');
       render();
       DashboardModule?.render();
+      setTimeout(() => {
+        Ui.confirm(
+          '🔄 Relevo de Habitación',
+          '¿Deseas realizar el Relevo de Habitación ahora para verificar los insumos críticos en el punto de uso?',
+          () => {
+            App.navigateTo('inventory');
+            if (typeof InventoryModule !== 'undefined' && InventoryModule.switchTab) {
+              InventoryModule.switchTab('relay');
+            }
+          }
+        );
+      }, 350);
     }
   };
 

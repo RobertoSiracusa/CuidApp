@@ -178,6 +178,11 @@ const AdministrationModule = (() => {
               Stock disponible: ${stock} ${Api.escapeHtml(unit)}
               ${med.indication ? ` · <em>${Api.escapeHtml(med.indication)}</em>` : ''}
             </div>
+            ${med.stockControl === 'conteo' ? `
+              <div class="text-xs" style="margin-top:4px;color:var(--text-sec);background:rgba(56,189,248,0.08);padding:3px 8px;border-radius:var(--radius-sm);border:1px solid rgba(56,189,248,0.2);">
+                ℹ️ Controlado por conteo físico: registrar la dosis no descuenta stock.
+              </div>
+            ` : ''}
           </div>
         </div>
 
@@ -425,9 +430,13 @@ const AdministrationModule = (() => {
         <div class="text-xs text-muted" style="margin-top:2px;">
           Hora: <strong>${Api.escapeHtml(scheduledTime)}</strong> · Dosis: <strong>${dose} ${Api.escapeHtml(med.unit || '')}</strong>
         </div>
-        ${action === 'given' ? `
+        ${med.stockControl === 'conteo' ? `
+          <div class="text-xs" style="margin-top:6px;color:var(--info);background:rgba(56,189,248,0.1);padding:6px 10px;border-radius:var(--radius-sm);border:1px solid rgba(56,189,248,0.25);">
+            ℹ️ <strong>Control por conteo físico:</strong> Este medicamento no descuenta stock automáticamente al registrar la dosis. El stock se actualiza en el relevo de habitación.
+          </div>
+        ` : action === 'given' ? `
           <div class="text-xs text-stable" style="margin-top:6px;">
-            ℹ️ El stock se descontará automáticamente (${med.currentStock} $\\rightarrow$ ${Math.max(0, med.currentStock - dose)} ${Api.escapeHtml(med.unit || '')}).
+            ℹ️ El stock se descontará automáticamente (${med.currentStock} &rarr; ${Math.max(0, med.currentStock - dose)} ${Api.escapeHtml(med.unit || '')}).
           </div>
         ` : `
           <div class="text-xs text-alert" style="margin-top:6px;">

@@ -22,7 +22,13 @@ const LocalStore = (() => {
     });
   };
 
-  const todayStr = () => new Date().toISOString().split('T')[0];
+  const localDateStr = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = () => localDateStr();
   const nowISO = () => new Date().toISOString();
 
   // ─── Estructura de Datos Inicial (Seed + cuidapp_db.json) ──────
@@ -32,7 +38,7 @@ const LocalStore = (() => {
 
     return {
       _meta: {
-        version: '2.0.0',
+        version: '2.3.0',
         createdAt: now,
         mode: 'local'
       },
@@ -91,6 +97,21 @@ const LocalStore = (() => {
           createdAt: now
         }
       ],
+      supplyLocations: [
+        { id: 'loc_hab', name: 'Habitación', locationType: 'habitacion', isPointOfCare: true, isDefaultStorage: false, reviewEveryHours: 50, sortOrder: 1, active: true, archivedAt: null, createdAt: now },
+        { id: 'loc_arm', name: 'Armario Central', locationType: 'armario', isPointOfCare: false, isDefaultStorage: true, reviewEveryHours: 720, sortOrder: 2, active: true, archivedAt: null, createdAt: now },
+        { id: 'loc_nev', name: 'Nevera', locationType: 'nevera', isPointOfCare: false, isDefaultStorage: false, reviewEveryHours: 168, sortOrder: 3, active: true, archivedAt: null, createdAt: now }
+      ],
+      supplySuppliers: [
+        { id: 'sup_farm', name: 'Farmacia Principal', orderChannel: 'whatsapp', whatsappPhone: '+34 600 111 222', leadTimeHours: 24, notes: 'Entrega en 24h', active: true, archivedAt: null, createdAt: now },
+        { id: 'sup_oxi', name: 'Oxígeno y Gases Médicos', orderChannel: 'whatsapp', whatsappPhone: '+34 600 333 444', leadTimeHours: 48, notes: 'Canje de cilindros', active: true, archivedAt: null, createdAt: now },
+        { id: 'sup_dist', name: 'Distribuidora Sanitaria', orderChannel: 'phone', phone: '+34 900 100 200', leadTimeHours: 72, notes: 'Insumos continuos y pañales', active: true, archivedAt: null, createdAt: now }
+      ],
+      supplyRelays: [],
+      supplyOrderBatches: [],
+      supplyOrderLines: [],
+      supplyOpenContainers: [],
+      supplyExpiryRecords: [],
       inventoryCategories: [
         { id: 'cat_1', name: 'Medicamentos' },
         { id: 'cat_2', name: 'Insumos Médicos' },
@@ -267,7 +288,8 @@ const LocalStore = (() => {
       'medications', 'medicationSchedules', 'medicationAdministrations', 'medicationRestocks',
       'taskTemplates', 'tasks', 'taskComments', 'appointments', 'recipes', 'recipeIngredients',
       'weeklyPlan', 'complementos', 'complementoIngredients', 'complementoCategories', 'availableComplementos', 'shoppingList', 'expenses',
-      'shifts', 'shiftNotes', 'auditLog'
+      'shifts', 'shiftNotes', 'auditLog',
+      'supplyLocations', 'supplySuppliers', 'supplyRelays', 'supplyOrderBatches', 'supplyOrderLines', 'supplyOpenContainers', 'supplyExpiryRecords'
     ];
 
     ARRAY_COLS.forEach(col => {
@@ -388,8 +410,140 @@ const LocalStore = (() => {
       data.availableComplementos = [];
     }
 
+    // ── Migración 2.3.0: Módulo Gestión Insumos ──
+    const now = nowISO();
+    if (!data.supplyLocations || data.supplyLocations.length === 0) {
+      data.supplyLocations = [
+        { id: 'loc_hab', name: 'Habitación', locationType: 'habitacion', isPointOfCare: true, isDefaultStorage: false, reviewEveryHours: 50, sortOrder: 1, active: true, archivedAt: null, createdAt: now },
+        { id: 'loc_arm', name: 'Armario Central', locationType: 'armario', isPointOfCare: false, isDefaultStorage: true, reviewEveryHours: 720, sortOrder: 2, active: true, archivedAt: null, createdAt: now },
+        { id: 'loc_nev', name: 'Nevera', locationType: 'nevera', isPointOfCare: false, isDefaultStorage: false, reviewEveryHours: 168, sortOrder: 3, active: true, archivedAt: null, createdAt: now }
+      ];
+    } else {
+      if (!data.supplyLocations.some(l => l.id === 'loc_hab' || l.isPointOfCare)) {
+        data.supplyLocations.push({ id: 'loc_hab', name: 'Habitación', locationType: 'habitacion', isPointOfCare: true, isDefaultStorage: false, reviewEveryHours: 50, sortOrder: 1, active: true, archivedAt: null, createdAt: now });
+      }
+      if (!data.supplyLocations.some(l => l.id === 'loc_arm' || l.isDefaultStorage)) {
+        data.supplyLocations.push({ id: 'loc_arm', name: 'Armario Central', locationType: 'armario', isPointOfCare: false, isDefaultStorage: true, reviewEveryHours: 720, sortOrder: 2, active: true, archivedAt: null, createdAt: now });
+      }
+      if (!data.supplyLocations.some(l => l.id === 'loc_nev')) {
+        data.supplyLocations.push({ id: 'loc_nev', name: 'Nevera', locationType: 'nevera', isPointOfCare: false, isDefaultStorage: false, reviewEveryHours: 168, sortOrder: 3, active: true, archivedAt: null, createdAt: now });
+      }
+    }
+
+    if (!data.supplySuppliers || data.supplySuppliers.length === 0) {
+      data.supplySuppliers = [
+        { id: 'sup_farm', name: 'Farmacia Principal', orderChannel: 'whatsapp', whatsappPhone: '+34 600 111 222', leadTimeHours: 24, notes: 'Entrega en 24h', active: true, archivedAt: null, createdAt: now },
+        { id: 'sup_oxi', name: 'Oxígeno y Gases Médicos', orderChannel: 'whatsapp', whatsappPhone: '+34 600 333 444', leadTimeHours: 48, notes: 'Canje de cilindros', active: true, archivedAt: null, createdAt: now },
+        { id: 'sup_dist', name: 'Distribuidora Sanitaria', orderChannel: 'phone', phone: '+34 900 100 200', leadTimeHours: 72, notes: 'Insumos continuos y pañales', active: true, archivedAt: null, createdAt: now }
+      ];
+    }
+
+    // Normalizar movimientos antiguos
+    if (Array.isArray(data.inventoryMovements)) {
+      data.inventoryMovements.forEach(m => {
+        if (!m.id) m.id = uuid();
+        m.stockState = m.stockState || 'full';
+        m.locationId = m.locationId || 'loc_hab';
+        m.note = m.note || m.reason || '';
+        m.profileId = m.profileId || m.actorId || 'usr_admin';
+        m.movementType = m.movementType || (m.delta < 0 ? 'consume' : (m.delta > 0 ? 'receive' : 'adjust'));
+        m.quantity = m.quantity !== undefined ? Number(m.quantity) : (m.delta !== undefined ? Number(m.delta) : 0);
+        m.qtyAbsolute = m.qtyAbsolute !== undefined ? m.qtyAbsolute : (m.movementType === 'count' ? Math.abs(m.quantity) : null);
+        m.occurredAt = m.occurredAt || m.createdAt || now;
+        m.clientEventId = m.clientEventId || uuid();
+        if (m.voidedAt === undefined) m.voidedAt = null;
+      });
+    }
+
+    // Integración de medicamentos en catálogo de insumos
+    if (Array.isArray(data.medications) && Array.isArray(data.inventoryItems)) {
+      data.medications.forEach(med => {
+        let item = data.inventoryItems.find(i => i.medicationId === med.id);
+        if (!item) {
+          item = {
+            id: uuid(),
+            name: med.name,
+            categoryId: 'cat_1',
+            unit: med.unit || 'unidad',
+            purchaseUnit: 'caja',
+            unitsPerPurchase: 1,
+            primaryLocationId: 'loc_hab',
+            reserveLocationId: 'loc_arm',
+            supplierId: 'sup_farm',
+            medicationId: med.id,
+            consumptionType: 'variable',
+            dailyConsumption: null,
+            treatmentEndDate: null,
+            safetyMarginDays: 2,
+            reviewPeriodDays: 2,
+            leadTimeHours: 24,
+            minThreshold: Number(med.minThreshold) || 0,
+            optimalStock: med.currentStock ? Math.max(Number(med.currentStock), 10) : 10,
+            isReturnable: false,
+            circuitTotal: null,
+            cylinderCapacityLiters: null,
+            oxygenFlowLpm: null,
+            hoursPerDay: null,
+            paoHours: null,
+            isCritical: false,
+            reviewEveryHours: 50,
+            stockControl: med.stockControl || 'dosis',
+            currentStock: Number(med.currentStock) || 0,
+            active: med.active !== false,
+            createdAt: med.createdAt || now
+          };
+          data.inventoryItems.push(item);
+        }
+      });
+
+      // Asegurar campos y conteo inicial en inventoryItems
+      data.inventoryItems.forEach(item => {
+        item.primaryLocationId = item.primaryLocationId || 'loc_hab';
+        item.reserveLocationId = item.reserveLocationId || 'loc_arm';
+        if (item.reviewEveryHours === undefined) {
+          item.reviewEveryHours = item.isCritical ? 26 : 50;
+        }
+        if (item.stockControl === undefined) {
+          item.stockControl = 'dosis';
+        }
+        if (item.isCritical === undefined) {
+          item.isCritical = false;
+        }
+        const hasMovs = data.inventoryMovements.some(m => m.itemId === item.id);
+        if (!hasMovs && Number(item.currentStock) > 0) {
+          data.inventoryMovements.push({
+            id: uuid(),
+            itemId: item.id,
+            locationId: item.primaryLocationId,
+            stockState: 'full',
+            movementType: 'count',
+            quantity: Number(item.currentStock),
+            qtyAbsolute: Number(item.currentStock),
+            note: 'Conteo inicial por migración',
+            occurredAt: item.createdAt || now,
+            createdAt: item.createdAt || now,
+            profileId: 'usr_admin',
+            clientEventId: uuid(),
+            voidedAt: null
+          });
+        }
+      });
+
+      // Recalcular caché con InventoryCalc si está disponible
+      if (typeof InventoryCalc !== 'undefined' && InventoryCalc.deriveStock) {
+        data.inventoryItems.forEach(item => {
+          const derived = InventoryCalc.deriveStock(item.id, data.inventoryMovements);
+          item.currentStock = derived.netFull;
+          if (item.medicationId) {
+            const med = data.medications.find(m => m.id === item.medicationId);
+            if (med) med.currentStock = derived.netFull;
+          }
+        });
+      }
+    }
+
     if (!data._meta) data._meta = {};
-    data._meta.version = '2.1.0';
+    data._meta.version = '2.3.0';
     data._meta.updatedAt = nowISO();
 
     return data;
@@ -542,11 +696,114 @@ const LocalStore = (() => {
     return item;
   };
 
+  // ─── PhotoStore: Almacenamiento Seguro de Fotos en IndexedDB (RNF-04) ─
+  const PhotoStore = (() => {
+    const DB_NAME = 'cuidapp_photos_db';
+    const STORE_NAME = 'relay_photos';
+    let dbPromise = null;
+    const getDB = () => {
+      if (dbPromise) return dbPromise;
+      dbPromise = new Promise((resolve) => {
+        if (typeof indexedDB === 'undefined') return resolve(null);
+        try {
+          const req = indexedDB.open(DB_NAME, 1);
+          req.onupgradeneeded = (e) => {
+            const d = e.target.result;
+            if (!d.objectStoreNames.contains(STORE_NAME)) {
+              d.createObjectStore(STORE_NAME, { keyPath: 'clientEventId' });
+            }
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      });
+      return dbPromise;
+    };
+    const savePhoto = async (clientEventId, blob) => {
+      const d = await getDB();
+      if (!d) return false;
+      return new Promise((resolve) => {
+        try {
+          const tx = d.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).put({ clientEventId, blob, createdAt: new Date().toISOString() });
+          tx.oncomplete = () => resolve(true);
+          tx.onerror = () => resolve(false);
+        } catch {
+          resolve(false);
+        }
+      });
+    };
+    const getPhoto = async (clientEventId) => {
+      const d = await getDB();
+      if (!d) return null;
+      return new Promise((resolve) => {
+        try {
+          const tx = d.transaction(STORE_NAME, 'readonly');
+          const req = tx.objectStore(STORE_NAME).get(clientEventId);
+          req.onsuccess = () => resolve(req.result ? req.result.blob : null);
+          req.onerror = () => resolve(null);
+        } catch {
+          resolve(null);
+        }
+      });
+    };
+    return { savePhoto, getPhoto };
+  })();
+
+  // Recalcular caché de stock (currentStock) usando el libro de movimientos
+  const recalcStockCache = (itemId) => {
+    if (typeof InventoryCalc === 'undefined' || !InventoryCalc.deriveStock) return;
+    const item = db().inventoryItems.find(i => i.id === itemId);
+    if (!item) return;
+    const derived = InventoryCalc.deriveStock(itemId, db().inventoryMovements);
+    item.currentStock = derived.netFull;
+    if (item.medicationId) {
+      const med = db().medications.find(m => m.id === item.medicationId);
+      if (med) med.currentStock = derived.netFull;
+    }
+  };
+
   const update = (col, id, updates, auditTableName = null) => {
     const idx = db()[col].findIndex(item => item.id === id);
     if (idx === -1) return null;
 
     const oldItem = { ...db()[col][idx] };
+
+    // Regla de solo lectura: el stock se calcula desde el libro de movimientos
+    if ((col === 'inventoryItems' || col === 'medications') && updates.currentStock !== undefined && updates.currentStock !== oldItem.currentStock) {
+      throw new Error('STOCK_LEDGER: El stock es de solo lectura y se calcula desde el libro de movimientos.');
+    }
+
+    // Guardas de ubicaciones
+    if (col === 'supplyLocations') {
+      if (updates.active !== undefined && updates.active !== oldItem.active) {
+        throw new Error('UBICACION_ESTADO: active solo cambia por RPC archive/restore.');
+      }
+      if (updates.isPointOfCare !== undefined && updates.isPointOfCare !== oldItem.isPointOfCare) {
+        throw new Error('UBICACION_ESPECIAL: La función especial solo cambia por setSpecialLocation.');
+      }
+      if (updates.isDefaultStorage !== undefined && updates.isDefaultStorage !== oldItem.isDefaultStorage) {
+        throw new Error('UBICACION_ESPECIAL: La función especial solo cambia por setSpecialLocation.');
+      }
+    }
+
+    // Regla de frecuencia al marcar/desmarcar crítico
+    if (col === 'inventoryItems' && updates.isCritical !== undefined) {
+      if (updates.isCritical && (oldItem.reviewEveryHours === null || oldItem.reviewEveryHours === undefined || oldItem.reviewEveryHours === 50 || oldItem.reviewEveryHours === 720)) {
+        updates.reviewEveryHours = 26;
+      } else if (!updates.isCritical && oldItem.reviewEveryHours === 26) {
+        updates.reviewEveryHours = 50;
+      }
+    }
+
+    // Sincronización de nombre de medicamento en catálogo de insumos
+    if (col === 'medications' && updates.name && updates.name !== oldItem.name) {
+      const invItem = db().inventoryItems.find(i => i.medicationId === id);
+      if (invItem) invItem.name = updates.name;
+    }
+
     const changedFields = [];
     const oldValues = {};
     const newValues = {};
@@ -574,6 +831,28 @@ const LocalStore = (() => {
     if (idx === -1) return false;
 
     const oldItem = { ...db()[col][idx] };
+
+    // Guardas de eliminación
+    if (col === 'supplyLocations') {
+      if (oldItem.isPointOfCare || oldItem.isDefaultStorage || oldItem.id === 'loc_hab' || oldItem.id === 'loc_arm') {
+        throw new Error('UBICACION_ESPECIAL: Habitación y Armario no se pueden borrar.');
+      }
+      const hasHistory = (db().inventoryMovements || []).some(m => m.locationId === id) ||
+                         (db().supplyRelays || []).some(r => r.locationId === id) ||
+                         (db().inventoryItems || []).some(i => i.primaryLocationId === id || i.reserveLocationId === id);
+      if (hasHistory) {
+        throw new Error('UBICACION_CON_HISTORIAL: Esta ubicación tiene historial: archívala en lugar de borrarla.');
+      }
+    }
+
+    if (col === 'supplySuppliers') {
+      const hasHistory = (db().supplyOrderLines || []).some(o => o.supplierId === id) ||
+                         (db().inventoryItems || []).some(i => i.supplierId === id);
+      if (hasHistory) {
+        throw new Error('PROVEEDOR_CON_HISTORIAL: Este proveedor tiene historial: archívalo en lugar de borrarlo.');
+      }
+    }
+
     db()[col].splice(idx, 1);
 
     if (auditTableName) {
@@ -615,53 +894,203 @@ const LocalStore = (() => {
     });
   };
 
-  // inventory_items_view
+  // inventory_items_view (completa con columnas nuevas y uniones)
   const getInventoryItemsView = () => {
     const items = db().inventoryItems || [];
-    const movs = db().inventoryMovements || [];
+    const movs = (db().inventoryMovements || []).filter(m => !m.voidedAt);
     const cats = db().inventoryCategories || [];
-    const catMap = new Map(cats.map(c => [c.id, c.name]));
+    const locs = db().supplyLocations || [];
+    const sups = db().supplySuppliers || [];
+    const meds = db().medications || [];
+    const scheds = db().medicationSchedules || [];
+    const orders = (db().supplyOrderLines || []).filter(o => o.status === 'in_transit');
 
-    const now = Date.now();
-    const thirtyDaysAgo = now - 30 * 86400000;
+    const catMap = new Map(cats.map(c => [c.id, c.name]));
+    const locMap = new Map(locs.map(l => [l.id, l]));
+    const supMap = new Map(sups.map(s => [s.id, s]));
 
     return items.map(item => {
       const currentStock = Number(item.currentStock) || 0;
       const minThreshold = Number(item.minThreshold) || 0;
       const categoryName = catMap.get(item.categoryId) || 'General';
+      const primaryLoc = locMap.get(item.primaryLocationId);
+      const reserveLoc = locMap.get(item.reserveLocationId);
+      const sup = supMap.get(item.supplierId);
+      const med = item.medicationId ? meds.find(m => m.id === item.medicationId) : null;
 
-      // Movimientos de salida (delta < 0)
-      const itemMovs = movs.filter(m => m.itemId === item.id && m.delta < 0 && new Date(m.createdAt).getTime() >= thirtyDaysAgo);
-
-      let daysRemaining = null;
-      let avgDailyConsumption = 0;
-
-      if (itemMovs.length >= 3) {
-        const totalConsumed = itemMovs.reduce((sum, m) => sum + Math.abs(m.delta), 0);
-        avgDailyConsumption = totalConsumed / 30;
-        if (avgDailyConsumption > 0) {
-          daysRemaining = Math.floor(currentStock / avgDailyConsumption);
-        }
+      // Pauta de medicación
+      let pautaDailyAmount = 0;
+      if (item.medicationId) {
+        const activeScheds = scheds.filter(s => s.medicationId === item.medicationId && s.active);
+        pautaDailyAmount = activeScheds.reduce((sum, s) => sum + (Number(s.dose) || 0), 0);
       }
 
-      const isLow = currentStock <= minThreshold;
+      // Pedidos en tránsito para este ítem
+      const itemOrders = orders.filter(o => o.itemId === item.id);
+      const inTransitBase = itemOrders.reduce((sum, o) => sum + (Number(o.orderedQtyBase) || 0), 0);
+      const nextExpectedBy = itemOrders.map(o => o.expectedBy).filter(Boolean).sort()[0] || null;
+
+      // Frecuencia efectiva de revisión en su punto de uso
+      const effectiveReviewHours = item.reviewEveryHours || (primaryLoc?.reviewEveryHours) || 50;
+
+      // Último conteo en punto de uso
+      const pocCounts = movs.filter(m => m.itemId === item.id && m.locationId === item.primaryLocationId && m.movementType === 'count')
+        .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt));
+      const pointOfCareLastCountedAt = pocCounts[0] ? pocCounts[0].occurredAt : null;
+
+      // Cantidad de vacíos para retornables
+      let emptyQuantity = 0;
+      if (item.isReturnable) {
+        const itemMovs = movs.filter(m => m.itemId === item.id);
+        const derived = typeof InventoryCalc !== 'undefined' && InventoryCalc.deriveStock
+          ? InventoryCalc.deriveStock(item.id, itemMovs)
+          : { netEmpty: 0 };
+        emptyQuantity = derived.netEmpty || 0;
+      }
 
       return {
         ...item,
         categoryName,
-        daysRemaining,
-        avgDailyConsumption,
-        isLow
+        primaryLocationName: primaryLoc?.name || 'Habitación',
+        reserveLocationName: reserveLoc?.name || 'Armario Central',
+        supplierName: sup?.name || null,
+        supplierLeadTimeHours: sup?.leadTimeHours || 24,
+        supplierWhatsapp: sup?.whatsappPhone || null,
+        medicationStatus: med?.status || null,
+        pautaDailyAmount,
+        inTransitBase,
+        nextExpectedBy,
+        effectiveReviewHours,
+        pointOfCareLastCountedAt,
+        emptyQuantity,
+        isLow: currentStock <= minThreshold
       };
     });
   };
 
-  // RPC: record_administration
+  // supply_locations_view
+  const getSupplyLocationsView = ({ includeArchived = false } = {}) => {
+    let locs = db().supplyLocations || [];
+    if (!includeArchived) {
+      locs = locs.filter(l => l.active !== false && !l.archivedAt);
+    }
+    const items = db().inventoryItems || [];
+    const orders = db().supplyOrderLines || [];
+    const containers = db().supplyOpenContainers || [];
+    const movs = db().inventoryMovements || [];
+    const relays = db().supplyRelays || [];
+
+    return locs.map(loc => {
+      const itemsCount = items.filter(i => (i.primaryLocationId === loc.id || i.reserveLocationId === loc.id) && i.active !== false).length;
+      const activeOrdersCount = orders.filter(o => o.targetLocationId === loc.id && o.status === 'in_transit').length;
+      const openContainersCount = containers.filter(c => c.locationId === loc.id && c.status === 'open').length;
+      const hasHistory = movs.some(m => m.locationId === loc.id) ||
+                         relays.some(r => r.locationId === loc.id) ||
+                         items.some(i => i.primaryLocationId === loc.id || i.reserveLocationId === loc.id) ||
+                         orders.some(o => o.targetLocationId === loc.id);
+
+      return {
+        ...loc,
+        itemsCount,
+        activeOrdersCount,
+        openContainersCount,
+        hasHistory
+      };
+    }).sort((a, b) => (a.sortOrder || 99) - (b.sortOrder || 99));
+  };
+
+  // supply_suppliers_view
+  const getSupplySuppliersView = ({ includeArchived = false } = {}) => {
+    let sups = db().supplySuppliers || [];
+    if (!includeArchived) {
+      sups = sups.filter(s => s.active !== false && !s.archivedAt);
+    }
+    const items = db().inventoryItems || [];
+    const orders = db().supplyOrderLines || [];
+
+    return sups.map(sup => {
+      const itemsCount = items.filter(i => i.supplierId === sup.id && i.active !== false).length;
+      const ordersCount = orders.filter(o => o.supplierId === sup.id).length;
+      const hasHistory = ordersCount > 0 || items.some(i => i.supplierId === sup.id);
+      return {
+        ...sup,
+        itemsCount,
+        ordersCount,
+        hasHistory
+      };
+    });
+  };
+
+  // inventory_stock_view
+  const getInventoryStockView = () => {
+    const items = db().inventoryItems || [];
+    const locs = db().supplyLocations || [];
+    const movs = (db().inventoryMovements || []).filter(m => !m.voidedAt);
+    const rows = [];
+
+    items.forEach(item => {
+      const itemMovs = movs.filter(m => m.itemId === item.id);
+      const locIds = new Set(itemMovs.map(m => m.locationId));
+      if (item.primaryLocationId) locIds.add(item.primaryLocationId);
+      if (item.reserveLocationId) locIds.add(item.reserveLocationId);
+
+      locIds.forEach(locId => {
+        const loc = locs.find(l => l.id === locId);
+        const derived = typeof InventoryCalc !== 'undefined' && InventoryCalc.deriveStock
+          ? InventoryCalc.deriveStock(item.id, itemMovs)
+          : { byLocation: {} };
+        const locData = (derived.byLocation && derived.byLocation[locId]) || { full: 0, empty: 0, lastCountedAt: null };
+
+        rows.push({
+          itemId: item.id,
+          locationId: locId,
+          locationName: loc?.name || locId,
+          stockState: 'full',
+          rawQuantity: locData.full,
+          lastCountedAt: locData.lastCountedAt
+        });
+
+        if (item.isReturnable) {
+          rows.push({
+            itemId: item.id,
+            locationId: locId,
+            locationName: loc?.name || locId,
+            stockState: 'empty',
+            rawQuantity: locData.empty,
+            lastCountedAt: locData.lastCountedAt
+          });
+        }
+      });
+    });
+    return rows;
+  };
+
+  // Contexto para InventoryCalc.buildSupplyPlan
+  const getSupplyPlanContext = () => {
+    const items = getInventoryItemsView();
+    const movs = (db().inventoryMovements || []).filter(m => !m.voidedAt);
+    const orderLines = (db().supplyOrderLines || []).filter(o => o.status === 'in_transit');
+    const locations = db().supplyLocations || [];
+    const suppliers = db().supplySuppliers || [];
+    const lastRelay = (db().supplyRelays || []).slice().sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))[0];
+    const pendingReviewItemIds = lastRelay ? (lastRelay.omittedItemIds || []) : [];
+
+    return {
+      items,
+      movements: movs,
+      orderLines,
+      locations,
+      suppliers,
+      pendingReviewItemIds,
+      now: new Date()
+    };
+  };
+
+  // RPC: record_administration (con método de control y sin bloqueo por stock)
   const recordAdministration = ({ medicationId, scheduleId, status, dose, notes, scheduledDate, scheduledTime }) => {
     const sDate = scheduledDate || todayStr();
     const numDose = Number(dose || 1);
 
-    // Verificar si ya fue administrada hoy la misma dosis programada (RF-45)
     if (scheduleId) {
       const existing = db().medicationAdministrations.find(a => a.scheduleId === scheduleId && a.scheduledDate === sDate);
       if (existing) {
@@ -669,21 +1098,14 @@ const LocalStore = (() => {
       }
     }
 
-    // Si status === 'given' | 'administered', descontar del stock del medicamento
-    if (status === 'given' || status === 'administered') {
-      const med = db().medications.find(m => m.id === medicationId);
-      if (!med) throw new Error('Medicamento no encontrado');
-      if (Number(med.currentStock) < numDose) {
-        throw new Error(`Stock insuficiente (${med.currentStock}) para administrar dosis de ${numDose}`);
-      }
-      const oldStock = med.currentStock;
-      med.currentStock = Number(med.currentStock) - numDose;
-      recordAudit('medications', med.id, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: med.currentStock });
-    }
+    const med = db().medications.find(m => m.id === medicationId);
+    if (!med) throw new Error('Medicamento no encontrado');
+    const invItem = db().inventoryItems.find(i => i.medicationId === medicationId);
 
     const actor = getCurrentUser();
+    const adminId = uuid();
     const adminRecord = {
-      id: uuid(),
+      id: adminId,
       medicationId,
       scheduleId: scheduleId || null,
       scheduledDate: sDate,
@@ -691,17 +1113,41 @@ const LocalStore = (() => {
       administeredAt: nowISO(),
       administeredBy: actor.id,
       administeredByName: actor.fullName,
-      status: (status === 'administered' ? 'given' : status), // 'given' | 'skipped' | 'refused'
+      status: (status === 'administered' ? 'given' : status),
       dose: numDose,
       notes: notes || '',
       createdAt: nowISO()
     };
 
     db().medicationAdministrations.push(adminRecord);
-    recordAudit('medication_administrations', adminRecord.id, 'INSERT', ['status', 'dose', 'notes'], {}, adminRecord);
+    recordAudit('medication_administrations', adminId, 'INSERT', ['status', 'dose', 'notes'], {}, adminRecord);
+
+    // Descontar stock solo si status === 'given' y método de control es 'dosis'
+    if (status === 'given' || status === 'administered') {
+      const stockCtrl = med.stockControl || invItem?.stockControl || 'dosis';
+      if (stockCtrl === 'dosis' && invItem) {
+        db().inventoryMovements.push({
+          id: uuid(),
+          itemId: invItem.id,
+          locationId: invItem.primaryLocationId || 'loc_hab',
+          stockState: 'full',
+          movementType: 'consume',
+          quantity: -numDose,
+          qtyAbsolute: null,
+          administrationId: adminId,
+          note: `Dosis administrada de ${med.name}`,
+          profileId: actor.id,
+          occurredAt: nowISO(),
+          clientEventId: uuid(),
+          voidedAt: null,
+          createdAt: nowISO()
+        });
+        recalcStockCache(invItem.id);
+      }
+    }
 
     save();
-    return adminRecord.id;
+    return adminId;
   };
 
   // RPC: undo_administration
@@ -711,14 +1157,11 @@ const LocalStore = (() => {
 
     const admin = db().medicationAdministrations[idx];
 
-    // Si fue dada, restaurar el stock del medicamento
-    if ((admin.status === 'given' || admin.status === 'administered') && admin.medicationId) {
-      const med = db().medications.find(m => m.id === admin.medicationId);
-      if (med) {
-        const oldStock = med.currentStock;
-        med.currentStock = Number(med.currentStock) + Number(admin.dose || 1);
-        recordAudit('medications', med.id, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: med.currentStock });
-      }
+    // Anular movimiento de consumo vinculado
+    const mov = db().inventoryMovements.find(m => m.administrationId === adminId);
+    if (mov) {
+      mov.voidedAt = nowISO();
+      recalcStockCache(mov.itemId);
     }
 
     db().medicationAdministrations.splice(idx, 1);
@@ -728,33 +1171,30 @@ const LocalStore = (() => {
     return true;
   };
 
-  // RPC: adjust_inventory
-  const adjustInventory = (itemId, delta, reason = '') => {
+  // RPC: adjust_inventory (compatible con 4.º parámetro locationId)
+  const adjustInventory = (itemId, delta, reason = '', locationId = null) => {
     const item = db().inventoryItems.find(i => i.id === itemId);
     if (!item) throw new Error('Insumo no encontrado');
-
-    const oldStock = Number(item.currentStock) || 0;
-    const newStock = oldStock + Number(delta);
-    if (newStock < 0) {
-      throw new Error('El stock resultante no puede ser menor que cero.');
-    }
-
-    item.currentStock = newStock;
 
     const actor = getCurrentUser();
     const mov = {
       id: uuid(),
       itemId,
-      delta: Number(delta),
-      previousStock: oldStock,
-      newStock,
-      reason: reason || (delta > 0 ? 'Ajuste manual (+)' : 'Ajuste manual (-)'),
-      actorId: actor.id,
+      locationId: locationId || item.primaryLocationId || 'loc_hab',
+      stockState: 'full',
+      movementType: 'adjust',
+      quantity: Number(delta),
+      qtyAbsolute: null,
+      note: reason || (delta > 0 ? 'Ajuste manual (+)' : 'Ajuste manual (-)'),
+      profileId: actor.id,
+      occurredAt: nowISO(),
+      clientEventId: uuid(),
+      voidedAt: null,
       createdAt: nowISO()
     };
 
     db().inventoryMovements.push(mov);
-    recordAudit('inventory_items', itemId, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: newStock });
+    recalcStockCache(itemId);
 
     save();
     return mov;
@@ -765,12 +1205,10 @@ const LocalStore = (() => {
     const med = db().medications.find(m => m.id === medicationId);
     if (!med) throw new Error('Medicamento no encontrado');
 
-    const oldStock = Number(med.currentStock) || 0;
-    const addQty = Number(quantity) || 0;
-    med.currentStock = oldStock + addQty;
-
     const actor = getCurrentUser();
     const restockId = uuid();
+    const addQty = Number(quantity) || 0;
+
     const restockRecord = {
       id: restockId,
       medicationId,
@@ -782,7 +1220,29 @@ const LocalStore = (() => {
     };
     db().medicationRestocks.push(restockRecord);
 
-    // Crear gasto asociado automáticamente si costo > 0
+    // Entrada en el libro de movimientos
+    const invItem = db().inventoryItems.find(i => i.medicationId === medicationId);
+    if (invItem) {
+      db().inventoryMovements.push({
+        id: uuid(),
+        itemId: invItem.id,
+        locationId: invItem.reserveLocationId || invItem.primaryLocationId || 'loc_arm',
+        stockState: 'full',
+        movementType: 'receive',
+        quantity: addQty,
+        qtyAbsolute: null,
+        note: `Compra en ${establishment || 'Farmacia'}`,
+        profileId: actor.id,
+        occurredAt: nowISO(),
+        clientEventId: uuid(),
+        voidedAt: null,
+        createdAt: nowISO()
+      });
+      recalcStockCache(invItem.id);
+    } else {
+      med.currentStock = (Number(med.currentStock) || 0) + addQty;
+    }
+
     if (cost > 0) {
       db().expenses.push({
         id: uuid(),
@@ -796,10 +1256,534 @@ const LocalStore = (() => {
       });
     }
 
-    recordAudit('medications', medicationId, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: med.currentStock });
-
     save();
     return restockId;
+  };
+
+  // ─── RPCs del Módulo «Gestión Insumos» ─────────────────────────
+
+  // RPC: record_supply_movements
+  const recordSupplyMovements = (rows = []) => {
+    if (!Array.isArray(rows) || rows.length === 0) return { ok: true, count: 0 };
+    const existingEvents = new Set(db().inventoryMovements.map(m => m.clientEventId).filter(Boolean));
+    const toInsert = [];
+    const now = nowISO();
+    const actor = getCurrentUser();
+    const affectedItems = new Set();
+
+    for (const r of rows) {
+      if (r.clientEventId && existingEvents.has(r.clientEventId)) {
+        continue;
+      }
+      if (r.movementType === 'receive') {
+        throw new Error('STOCK_LEDGER: recordSupplyMovements no admite tipo receive. Usa la recepción de compras.');
+      }
+      const item = db().inventoryItems.find(i => i.id === r.itemId);
+      if (!item) throw new Error(`STOCK_LEDGER: Insumo ${r.itemId} no encontrado`);
+
+      const mov = {
+        id: uuid(),
+        itemId: r.itemId,
+        locationId: r.locationId || item.primaryLocationId || 'loc_hab',
+        stockState: r.stockState || 'full',
+        movementType: r.movementType,
+        quantity: r.quantity !== undefined ? Number(r.quantity) : 0,
+        qtyAbsolute: r.qtyAbsolute !== undefined && r.qtyAbsolute !== null ? Number(r.qtyAbsolute) : null,
+        note: r.note || '',
+        groupId: r.groupId || null,
+        clientEventId: r.clientEventId || uuid(),
+        occurredAt: r.occurredAt || now,
+        profileId: actor.id,
+        voidedAt: null,
+        createdAt: now
+      };
+      toInsert.push(mov);
+      affectedItems.add(r.itemId);
+    }
+
+    if (toInsert.length > 0) {
+      db().inventoryMovements.push(...toInsert);
+      affectedItems.forEach(itemId => recalcStockCache(itemId));
+      save();
+    }
+    return { ok: true, count: toInsert.length };
+  };
+
+  // RPC: save_supply_relay_full
+  const saveSupplyRelayFull = (relay, counts = [], movements = []) => {
+    const now = nowISO();
+    const actor = getCurrentUser();
+    if (!relay.occurredAt) relay.occurredAt = now;
+    if (new Date(relay.occurredAt) > new Date()) {
+      throw new Error('La hora del conteo no puede ser futura');
+    }
+
+    if (relay.clientEventId) {
+      const existing = db().supplyRelays.find(r => r.clientEventId === relay.clientEventId);
+      if (existing) return { ok: true, relayId: existing.id, duplicate: true };
+    }
+
+    const relayId = uuid();
+    const relayRecord = {
+      id: relayId,
+      locationId: relay.locationId || 'loc_hab',
+      occurredAt: relay.occurredAt,
+      shiftId: relay.shiftId || null,
+      shiftSlot: 'any',
+      countedByName: relay.countedByName || actor.fullName || 'Cuidador',
+      verifiedByProfileId: actor.id,
+      notes: relay.notes || '',
+      photoPath: relay.photoPath || null,
+      countsCount: counts.length,
+      omittedItemIds: relay.omittedItemIds || [],
+      clientEventId: relay.clientEventId || uuid(),
+      createdAt: now
+    };
+
+    db().supplyRelays.push(relayRecord);
+
+    const toInsertMovs = [];
+    const affectedItems = new Set();
+
+    // Movimientos inferidos o traslados
+    for (const m of movements) {
+      const item = db().inventoryItems.find(i => i.id === m.itemId);
+      if (!item) continue;
+      toInsertMovs.push({
+        id: uuid(),
+        itemId: m.itemId,
+        locationId: m.locationId || item.primaryLocationId || 'loc_hab',
+        stockState: m.stockState || 'full',
+        movementType: m.movementType || 'transfer',
+        quantity: Number(m.quantity) || 0,
+        qtyAbsolute: m.qtyAbsolute !== undefined ? m.qtyAbsolute : null,
+        note: m.note || 'Traslado inferido por relevo',
+        groupId: m.groupId || null,
+        relayId,
+        clientEventId: m.clientEventId || uuid(),
+        occurredAt: m.occurredAt || relay.occurredAt,
+        profileId: actor.id,
+        voidedAt: null,
+        createdAt: now
+      });
+      affectedItems.add(m.itemId);
+    }
+
+    // Conteos del relevo
+    for (const c of counts) {
+      const item = db().inventoryItems.find(i => i.id === c.itemId);
+      if (!item) continue;
+      toInsertMovs.push({
+        id: uuid(),
+        itemId: c.itemId,
+        locationId: relay.locationId || item.primaryLocationId || 'loc_hab',
+        stockState: c.stockState || 'full',
+        movementType: 'count',
+        quantity: Number(c.countedQty) || 0,
+        qtyAbsolute: Number(c.countedQty) || 0,
+        note: 'Conteo físico de relevo',
+        groupId: null,
+        relayId,
+        clientEventId: uuid(),
+        occurredAt: relay.occurredAt,
+        profileId: actor.id,
+        voidedAt: null,
+        createdAt: now
+      });
+      affectedItems.add(c.itemId);
+    }
+
+    db().inventoryMovements.push(...toInsertMovs);
+    affectedItems.forEach(itemId => recalcStockCache(itemId));
+    save();
+    return { ok: true, relayId };
+  };
+
+  // RPC: mark_supply_in_transit
+  const markSupplyInTransit = (supplierId, lines = [], clientEventId, expectedBy = null) => {
+    const now = nowISO();
+    const actor = getCurrentUser();
+
+    if (clientEventId) {
+      const existingBatch = db().supplyOrderBatches.find(b => b.clientEventId === clientEventId);
+      if (existingBatch) {
+        return { ok: true, batchId: existingBatch.id, linesCount: existingBatch.linesCount, duplicate: true };
+      }
+    }
+
+    // Control de conflictos antiduplicidad
+    const conflicts = [];
+    for (const l of lines) {
+      const openLine = db().supplyOrderLines.find(ol => ol.itemId === l.itemId && ol.status === 'in_transit');
+      if (openLine) {
+        const item = db().inventoryItems.find(i => i.id === l.itemId);
+        const orderedByProfile = db().profiles.find(p => p.id === openLine.orderedByProfileId);
+        conflicts.push({
+          itemId: l.itemId,
+          itemName: item?.name || 'Insumo',
+          orderedBy: orderedByProfile?.fullName || 'Otro cuidador',
+          orderedAt: openLine.orderedAt
+        });
+      }
+    }
+    if (conflicts.length > 0) {
+      return { ok: false, conflict: true, conflicts };
+    }
+
+    const batchId = uuid();
+    const batch = {
+      id: batchId,
+      supplierId: supplierId || null,
+      status: 'ordered',
+      linesCount: lines.length,
+      clientEventId: clientEventId || uuid(),
+      orderedByProfileId: actor.id,
+      createdAt: now
+    };
+    db().supplyOrderBatches.push(batch);
+
+    for (const l of lines) {
+      const item = db().inventoryItems.find(i => i.id === l.itemId);
+      const targetLoc = l.targetLocationId || item?.reserveLocationId || item?.primaryLocationId || 'loc_arm';
+      db().supplyOrderLines.push({
+        id: uuid(),
+        batchId,
+        supplierId: supplierId || item?.supplierId || null,
+        itemId: l.itemId,
+        targetLocationId: targetLoc,
+        orderedQtyPurchase: Number(l.orderedQtyPurchase) || 1,
+        unitsPerPurchase: Number(l.unitsPerPurchase) || item?.unitsPerPurchase || 1,
+        orderedQtyBase: Number(l.orderedQtyBase) || (Number(l.orderedQtyPurchase || 1) * (Number(l.unitsPerPurchase) || item?.unitsPerPurchase || 1)),
+        receivedQtyBase: 0,
+        status: 'in_transit',
+        expectedBy: expectedBy || null,
+        orderedAt: now,
+        receivedAt: null,
+        orderedByProfileId: actor.id,
+        createdAt: now
+      });
+    }
+
+    save();
+    return { ok: true, batchId, linesCount: lines.length };
+  };
+
+  // RPC: receive_supply_order_line
+  const receiveSupplyOrderLine = ({ lineId, receivedQtyBase, clientEventId, locationId, emptiesSent = 0, cost = 0, receivedAt }) => {
+    const line = db().supplyOrderLines.find(l => l.id === lineId);
+    if (!line) throw new Error('Línea de pedido no encontrada');
+    if (line.status !== 'in_transit') {
+      return { ok: true, alreadyReceived: true };
+    }
+
+    const item = db().inventoryItems.find(i => i.id === line.itemId);
+    if (!item) throw new Error('Insumo no encontrado');
+
+    const now = nowISO();
+    const actor = getCurrentUser();
+    const targetLoc = locationId || line.targetLocationId || item.reserveLocationId || item.primaryLocationId || 'loc_arm';
+    const recQty = Number(receivedQtyBase) || Number(line.orderedQtyBase);
+
+    // Actualizar pedido
+    line.receivedQtyBase = recQty;
+    line.status = recQty >= Number(line.orderedQtyBase) ? 'received' : 'partial';
+    line.receivedAt = receivedAt || now;
+
+    // Movimiento de recepción
+    db().inventoryMovements.push({
+      id: uuid(),
+      itemId: item.id,
+      locationId: targetLoc,
+      stockState: 'full',
+      movementType: 'receive',
+      quantity: recQty,
+      qtyAbsolute: null,
+      orderLineId: line.id,
+      note: 'Recepción de compra',
+      profileId: actor.id,
+      occurredAt: receivedAt || now,
+      clientEventId: clientEventId || uuid(),
+      voidedAt: null,
+      createdAt: now
+    });
+
+    // Canje de vacíos si aplica
+    if (emptiesSent > 0 && item.isReturnable) {
+      db().inventoryMovements.push({
+        id: uuid(),
+        itemId: item.id,
+        locationId: targetLoc,
+        stockState: 'empty',
+        movementType: 'exchange_out',
+        quantity: -Number(emptiesSent),
+        qtyAbsolute: null,
+        orderLineId: line.id,
+        note: 'Canje de vacíos en entrega',
+        profileId: actor.id,
+        occurredAt: receivedAt || now,
+        clientEventId: uuid(),
+        voidedAt: null,
+        createdAt: now
+      });
+    }
+
+    // Crear gasto opcional
+    if (cost > 0) {
+      const category = item.isReturnable ? 'Gases Medicinales' : 'Farmacia';
+      db().expenses.push({
+        id: uuid(),
+        description: `Compra: ${item.name} (${recQty} ${item.unit})`,
+        amount: Number(cost),
+        expenseDate: todayStr(),
+        category,
+        managedBy: actor.id,
+        createdAt: now
+      });
+    }
+
+    // Si es fármaco, registrar en medicationRestocks
+    if (item.medicationId) {
+      db().medicationRestocks.push({
+        id: uuid(),
+        medicationId: item.medicationId,
+        quantity: recQty,
+        establishment: 'Proveedor',
+        cost: Number(cost) || 0,
+        managedBy: actor.id,
+        createdAt: now
+      });
+    }
+
+    recalcStockCache(item.id);
+    save();
+    return { ok: true, lineId: line.id, status: line.status };
+  };
+
+  // RPC: cancel_supply_order_line
+  const cancelSupplyOrderLine = (lineId, reason = '') => {
+    const line = db().supplyOrderLines.find(l => l.id === lineId);
+    if (!line) throw new Error('Línea de pedido no encontrada');
+    line.status = 'cancelled';
+    line.notes = reason || 'Liberado por cuidador';
+    save();
+    return { ok: true, lineId };
+  };
+
+  // RPC: void_supply_movement
+  const voidSupplyMovement = (movementId) => {
+    const mov = db().inventoryMovements.find(m => m.id === movementId);
+    if (!mov) throw new Error('Movimiento no encontrado');
+    if (mov.movementType === 'receive') {
+      throw new Error('STOCK_LEDGER: Las recepciones no se pueden anular directamente; libera o ajusta el pedido.');
+    }
+    if (mov.administrationId) {
+      throw new Error('STOCK_LEDGER: Los consumos por dosis clínica se anulan desde la administración de medicamentos.');
+    }
+
+    const now = nowISO();
+    const affectedItems = new Set([mov.itemId]);
+
+    if (mov.groupId) {
+      db().inventoryMovements.filter(m => m.groupId === mov.groupId).forEach(m => {
+        m.voidedAt = now;
+        affectedItems.add(m.itemId);
+      });
+    } else {
+      mov.voidedAt = now;
+    }
+
+    affectedItems.forEach(itemId => recalcStockCache(itemId));
+    save();
+    return { ok: true, movementId };
+  };
+
+  // RPC: archive_supply_location
+  const archiveSupplyLocation = (id, transferToId = null, note = '') => {
+    const user = getCurrentUser();
+    if (user.appRole !== 'admin') {
+      throw new Error('UBICACION_PERMISO: Solo un administrador puede archivar ubicaciones.');
+    }
+    const loc = db().supplyLocations.find(l => l.id === id);
+    if (!loc) throw new Error('Ubicación no encontrada');
+    if (loc.isPointOfCare || loc.isDefaultStorage || loc.id === 'loc_hab' || loc.id === 'loc_arm') {
+      throw new Error('UBICACION_ESPECIAL: El punto de uso y el almacén por defecto no se pueden archivar.');
+    }
+    if (loc.archivedAt || loc.active === false) {
+      return { ok: true, alreadyArchived: true };
+    }
+
+    const items = db().inventoryItems || [];
+    const movs = (db().inventoryMovements || []).filter(m => !m.voidedAt);
+    const hasRefs = items.some(i => i.primaryLocationId === id || i.reserveLocationId === id) ||
+                    movs.some(m => m.locationId === id);
+
+    if (hasRefs && !transferToId) {
+      throw new Error('UBICACION_CON_STOCK: Esta ubicación tiene insumos o stock; especifica una ubicación de destino.');
+    }
+
+    const now = nowISO();
+    const destLoc = transferToId ? db().supplyLocations.find(l => l.id === transferToId) : null;
+    if (transferToId && (!destLoc || !destLoc.active)) {
+      throw new Error('UBICACION_ARCHIVADA: La ubicación de destino debe estar activa.');
+    }
+
+    // Trasladar stock y saldos
+    if (transferToId) {
+      items.forEach(item => {
+        const itemMovs = movs.filter(m => m.itemId === item.id);
+        const derived = typeof InventoryCalc !== 'undefined' && InventoryCalc.deriveStock
+          ? InventoryCalc.deriveStock(item.id, itemMovs)
+          : { byLocation: {} };
+        const locStock = derived.byLocation && derived.byLocation[id];
+        if (locStock && locStock.full > 0) {
+          const groupId = uuid();
+          db().inventoryMovements.push(
+            { id: uuid(), itemId: item.id, locationId: id, stockState: 'full', movementType: 'transfer', quantity: -locStock.full, qtyAbsolute: null, note: `Traslado por archivo de ubicación hacia ${destLoc.name}`, groupId, profileId: user.id, occurredAt: now, clientEventId: uuid(), voidedAt: null, createdAt: now },
+            { id: uuid(), itemId: item.id, locationId: transferToId, stockState: 'full', movementType: 'transfer', quantity: locStock.full, qtyAbsolute: null, note: `Traslado por archivo de ubicación desde ${loc.name}`, groupId, profileId: user.id, occurredAt: now, clientEventId: uuid(), voidedAt: null, createdAt: now }
+          );
+        } else if (locStock && locStock.full < 0) {
+          db().inventoryMovements.push({
+            id: uuid(), itemId: item.id, locationId: id, stockState: 'full', movementType: 'adjust', quantity: Math.abs(locStock.full), qtyAbsolute: null, note: 'Ajuste de saldo negativo por archivo de ubicación', profileId: user.id, occurredAt: now, clientEventId: uuid(), voidedAt: null, createdAt: now
+          });
+        }
+        recalcStockCache(item.id);
+
+        if (item.primaryLocationId === id) item.primaryLocationId = transferToId;
+        if (item.reserveLocationId === id) item.reserveLocationId = transferToId;
+      });
+
+      // Reubicar pedidos en camino y envases abiertos
+      (db().supplyOrderLines || []).filter(o => o.targetLocationId === id).forEach(o => o.targetLocationId = transferToId);
+      (db().supplyOpenContainers || []).filter(c => c.locationId === id).forEach(c => c.locationId = transferToId);
+      (db().supplyExpiryRecords || []).filter(e => e.locationId === id).forEach(e => e.locationId = transferToId);
+    }
+
+    loc.active = false;
+    loc.archivedAt = now;
+    loc.notes = note || loc.notes;
+
+    save();
+    return { ok: true, locationId: id, active: false };
+  };
+
+  // RPC: restore_supply_location
+  const restoreSupplyLocation = (id) => {
+    const user = getCurrentUser();
+    if (user.appRole !== 'admin') {
+      throw new Error('UBICACION_PERMISO: Solo un administrador puede restaurar ubicaciones.');
+    }
+    const loc = db().supplyLocations.find(l => l.id === id);
+    if (!loc) throw new Error('Ubicación no encontrada');
+    loc.active = true;
+    loc.archivedAt = null;
+    save();
+    return { ok: true, locationId: id, active: true };
+  };
+
+  // RPC: set_special_location (admin)
+  const setSpecialLocation = (id, role) => {
+    const user = getCurrentUser();
+    if (user.appRole !== 'admin') {
+      throw new Error('UBICACION_PERMISO: Solo un administrador puede reasignar funciones especiales.');
+    }
+    const loc = db().supplyLocations.find(l => l.id === id);
+    if (!loc || !loc.active) throw new Error('La ubicación debe existir y estar activa.');
+
+    if (role === 'point_of_care') {
+      db().supplyLocations.forEach(l => l.isPointOfCare = (l.id === id));
+    } else if (role === 'default_storage') {
+      db().supplyLocations.forEach(l => l.isDefaultStorage = (l.id === id));
+    } else {
+      throw new Error('Rol de ubicación no válido.');
+    }
+
+    save();
+    return { ok: true, locationId: id, role };
+  };
+
+  // RPC: archive_supply_supplier
+  const archiveSupplySupplier = (id) => {
+    const user = getCurrentUser();
+    if (user.appRole !== 'admin') {
+      throw new Error('PROVEEDOR_PERMISO: Solo un administrador puede archivar proveedores.');
+    }
+    const sup = db().supplySuppliers.find(s => s.id === id);
+    if (!sup) throw new Error('Proveedor no encontrado');
+    const inTransit = (db().supplyOrderLines || []).some(o => o.supplierId === id && o.status === 'in_transit');
+    if (inTransit) {
+      throw new Error('PROVEEDOR_CON_PEDIDOS: No se puede archivar un proveedor con pedidos en camino.');
+    }
+    sup.active = false;
+    sup.archivedAt = nowISO();
+    save();
+    return { ok: true, supplierId: id, active: false };
+  };
+
+  // RPC: restore_supply_supplier
+  const restoreSupplySupplier = (id) => {
+    const user = getCurrentUser();
+    if (user.appRole !== 'admin') {
+      throw new Error('PROVEEDOR_PERMISO: Solo un administrador puede restaurar proveedores.');
+    }
+    const sup = db().supplySuppliers.find(s => s.id === id);
+    if (!sup) throw new Error('Proveedor no encontrado');
+    sup.active = true;
+    sup.archivedAt = null;
+    save();
+    return { ok: true, supplierId: id, active: true };
+  };
+
+  // RPC: delete_supply_location
+  const deleteSupplyLocation = (id) => {
+    const user = getCurrentUser();
+    if (user.appRole !== 'admin') {
+      throw new Error('UBICACION_PERMISO: Solo un administrador puede borrar ubicaciones.');
+    }
+    return remove('supplyLocations', id, 'supply_locations');
+  };
+
+  // RPC: delete_supply_supplier
+  const deleteSupplySupplier = (id) => {
+    const user = getCurrentUser();
+    if (user.appRole !== 'admin') {
+      throw new Error('PROVEEDOR_PERMISO: Solo un administrador puede borrar proveedores.');
+    }
+    return remove('supplySuppliers', id, 'supply_suppliers');
+  };
+
+  // Apertura y Cierre de Envases (PAO)
+  const openContainer = ({ itemId, locationId, clientEventId, expiresAt, openedAt }) => {
+    const now = nowISO();
+    const actor = getCurrentUser();
+    const item = db().inventoryItems.find(i => i.id === itemId);
+    if (!item) throw new Error('Insumo no encontrado');
+
+    const container = {
+      id: uuid(),
+      itemId,
+      locationId: locationId || item.primaryLocationId || 'loc_hab',
+      openedAt: openedAt || now,
+      expiresAt: expiresAt || null,
+      status: 'open',
+      clientEventId: clientEventId || uuid(),
+      openedByProfileId: actor.id,
+      closedAt: null,
+      notes: '',
+      createdAt: now
+    };
+    db().supplyOpenContainers.push(container);
+    save();
+    return container;
+  };
+
+  const closeContainer = (containerId, clientEventId = null, closedAt = null, notes = '') => {
+    const container = db().supplyOpenContainers.find(c => c.id === containerId);
+    if (!container) throw new Error('Envase no encontrado');
+    container.status = 'closed';
+    container.closedAt = closedAt || nowISO();
+    if (notes) container.notes = notes;
+    save();
+    return container;
   };
 
   // RPC: take_shift
@@ -944,6 +1928,10 @@ const LocalStore = (() => {
     // Vistas
     getMedicationsView,
     getInventoryItemsView,
+    getSupplyLocationsView,
+    getSupplySuppliersView,
+    getInventoryStockView,
+    getSupplyPlanContext,
     // RPCs
     recordAdministration,
     undoAdministration,
@@ -953,6 +1941,22 @@ const LocalStore = (() => {
     endShift,
     purgeOldAudit,
     generateRecurringTasks,
+    recordSupplyMovements,
+    saveSupplyRelayFull,
+    markSupplyInTransit,
+    receiveSupplyOrderLine,
+    cancelSupplyOrderLine,
+    voidSupplyMovement,
+    archiveSupplyLocation,
+    restoreSupplyLocation,
+    setSpecialLocation,
+    archiveSupplySupplier,
+    restoreSupplySupplier,
+    deleteSupplyLocation,
+    deleteSupplySupplier,
+    openContainer,
+    closeContainer,
+    PhotoStore,
     resetToDefaults,
     sanitizeAndMigrate: () => sanitizeAndMigrate(db())
   };

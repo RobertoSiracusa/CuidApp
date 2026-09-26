@@ -101,7 +101,7 @@ const MedicationsModule = (() => {
       <div class="med-item ${m.needsRestock ? 'needs-restock' : ''}" data-id="${Api.escapeHtml(m.id)}">
         <div class="med-hdr">
           <div>
-            <div class="med-name">${Api.escapeHtml(m.name)}</div>
+            <div class="med-name">💊 ${Api.escapeHtml(m.name)}</div>
             <div class="med-meta">
               ${m.prescriber ? `<span>Dr. ${Api.escapeHtml(m.prescriber)}</span>` : ''}
               ${m.indication ? `<span>${Api.escapeHtml(m.indication)}</span>` : ''}
@@ -110,6 +110,7 @@ const MedicationsModule = (() => {
           </div>
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;">
             <span class="badge badge-${Api.escapeHtml(m.status)}">${STATUS_LABELS[m.status] || 'Activo'}</span>
+            ${m.stockControl === 'conteo' ? '<span class="badge badge-info" style="font-size:0.68rem;" title="Controlado por conteo físico en relevos">📊 Control por conteo</span>' : ''}
             ${m.needsRestock ? '<span class="badge badge-emergency">⚠️ Reponer</span>' : ''}
           </div>
         </div>
@@ -373,6 +374,16 @@ const MedicationsModule = (() => {
         </div>
       </div>
       <div class="form-group">
+        <label class="form-label" for="mn-stock-control">Tipo de control de inventario</label>
+        <select class="form-select" id="mn-stock-control">
+          <option value="dosis" selected>Por dosis administrada (descuenta automáticamente)</option>
+          <option value="conteo">Por conteo físico (no descuenta por dosis)</option>
+        </select>
+        <div class="text-xs text-muted" style="margin-top:2px;">
+          Por conteo: recomendado para medicamentos controlados por conteo físico en relevos.
+        </div>
+      </div>
+      <div class="form-group">
         <label class="form-label" for="mn-daily">📅 Consumo diario manual (si no usa horarios)</label>
         <input class="form-input" id="mn-daily" type="number" placeholder="1" min="0" step="0.5" value="1">
       </div>
@@ -390,6 +401,7 @@ const MedicationsModule = (() => {
       const status = document.getElementById('mn-status')?.value || 'active';
       const currentStock = parseFloat(document.getElementById('mn-stock')?.value) || 0;
       const unit = document.getElementById('mn-unit')?.value?.trim() || 'tabletas';
+      const stockControl = document.getElementById('mn-stock-control')?.value || 'dosis';
       const manualDailyAmount = parseFloat(document.getElementById('mn-daily')?.value) || 0;
       const notes = document.getElementById('mn-notes')?.value?.trim() || null;
 
@@ -406,6 +418,7 @@ const MedicationsModule = (() => {
         status,
         currentStock,
         unit,
+        stockControl,
         manualDailyAmount,
         notes
       });
@@ -423,11 +436,62 @@ const MedicationsModule = (() => {
   };
 
   /**
+   * Modal rápido para registrar conteo físico en el libro mayor
+   */
+  const showQuickCountModal = (med) => {
+    const html = `
+      <div class="form-group">
+        <label class="form-label">Medicamento</label>
+        <div style="font-weight:600;font-size:1.05rem;">💊 ${Api.escapeHtml(med.name)}</div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="qc-qty">Cantidad contada físicamente (${Api.escapeHtml(med.unit || 'unidades')}) *</label>
+        <input class="form-input" id="qc-qty" type="number" min="0" step="1" value="${med.currentStock}" required autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="qc-note">Motivo del conteo</label>
+        <input class="form-input" id="qc-note" placeholder="Ej: Conteo físico, ajuste de turno..." value="Conteo físico de medicamento">
+      </div>
+    `;
+    Ui.showModal(`📝 Conteo — ${med.name}`, html, async () => {
+      const qty = parseFloat(document.getElementById('qc-qty')?.value);
+      const note = document.getElementById('qc-note')?.value?.trim() || 'Conteo físico de medicamento';
+      if (isNaN(qty) || qty < 0) {
+        Ui.toast('Ingresa una cantidad válida (≥ 0)', 'warning');
+        return false;
+      }
+
+      const res = await Api.recordSupplyMovements([{
+        itemId: med.id,
+        locationId: 'loc_hab',
+        stockState: 'full',
+        movementType: 'count',
+        quantity: qty,
+        qtyAbsolute: qty,
+        note
+      }]);
+
+      if (res.error) {
+        Ui.toast(res.error, 'error');
+        return false;
+      }
+
+      Ui.toast('Conteo físico registrado en el libro', 'success');
+      render();
+      DashboardModule?.render();
+      return true;
+    });
+  };
+
+  /**
    * Modal para editar medicamento
    */
   const showEditModal = (id) => {
     const med = cachedMeds.find(m => m.id === id);
     if (!med) return;
+
+    const userRole = (Auth.getProfile()?.appRole || Auth.getProfile()?.app_role || 'admin').toLowerCase();
+    const canToggleStockControl = ['admin', 'medico', 'enfermero'].includes(userRole);
 
     const contentHtml = `
       <div class="form-group">
@@ -452,8 +516,21 @@ const MedicationsModule = (() => {
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label" for="me-stock">Stock actual</label>
-          <input class="form-input" id="me-stock" type="number" min="0" value="${med.currentStock}">
+          <label class="form-label">Stock actual (Libro Mayor)</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 10px;background:var(--bg-glass);border-radius:var(--radius-sm);border:1px solid var(--border-color);min-height:38px;">
+            <span style="font-weight:700;font-size:1.05rem;">${med.currentStock} <span style="font-size:0.8rem;font-weight:400;color:var(--text-sec);">${Api.escapeHtml(med.unit || '')}</span></span>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-med-quick-count" style="padding:3px 8px;font-size:0.75rem;">📝 Contar</button>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="me-stock-control">Control de stock</label>
+        <select class="form-select" id="me-stock-control" ${!canToggleStockControl ? 'disabled' : ''}>
+          <option value="dosis" ${med.stockControl !== 'conteo' ? 'selected' : ''}>Por dosis administrada (descuenta automáticamente)</option>
+          <option value="conteo" ${med.stockControl === 'conteo' ? 'selected' : ''}>Por conteo físico (no descuenta por dosis)</option>
+        </select>
+        <div class="text-xs text-muted" style="margin-top:2px;">
+          ${!canToggleStockControl ? '🔒 Solo Admin, Médico o Enfermero pueden modificar esta opción.' : (med.stockControl === 'conteo' ? 'ℹ️ En modo conteo, registrar la dosis NO descuenta stock del inventario.' : 'ℹ️ Cada dosis administrada descuenta del libro de inventario.')}
         </div>
       </div>
       <div class="form-row">
@@ -477,7 +554,7 @@ const MedicationsModule = (() => {
       const prescriber = document.getElementById('me-prescriber')?.value?.trim() || null;
       const indication = document.getElementById('me-indication')?.value?.trim() || null;
       const status = document.getElementById('me-status')?.value || 'active';
-      const currentStock = parseFloat(document.getElementById('me-stock')?.value) || 0;
+      const stockControl = document.getElementById('me-stock-control')?.value || 'dosis';
       const unit = document.getElementById('me-unit')?.value?.trim() || 'tabletas';
       const manualDailyAmount = parseFloat(document.getElementById('me-daily')?.value) || 0;
       const notes = document.getElementById('me-notes')?.value?.trim() || null;
@@ -487,16 +564,20 @@ const MedicationsModule = (() => {
         return false;
       }
 
-      const res = await Api.updateMedication(id, {
+      const updates = {
         name,
         prescriber,
         indication,
         status,
-        currentStock,
         unit,
         manualDailyAmount,
         notes
-      });
+      };
+      if (canToggleStockControl) {
+        updates.stockControl = stockControl;
+      }
+
+      const res = await Api.updateMedication(id, updates);
 
       if (res.error) {
         Ui.toast(res.error, 'error');
@@ -508,6 +589,14 @@ const MedicationsModule = (() => {
       DashboardModule?.render();
       return true;
     });
+
+    // Enlazar botón de conteo rápido dentro del modal
+    setTimeout(() => {
+      document.getElementById('btn-med-quick-count')?.addEventListener('click', () => {
+        Ui.closeModal();
+        showQuickCountModal(med);
+      });
+    }, 50);
   };
 
   /**

@@ -5,6 +5,8 @@
 const DashboardModule = (() => {
   'use strict';
 
+  let cachedSupplyCtx = null;
+
   /**
    * Renderiza la pantalla principal del panel de control
    */
@@ -41,7 +43,8 @@ const DashboardModule = (() => {
         alertsRes,
         planRes,
         recipesRes,
-        shoppingRes
+        shoppingRes,
+        supplyRes
       ] = await Promise.all([
         Api.getPatientStatus(),
         Api.getSettings(),
@@ -56,7 +59,8 @@ const DashboardModule = (() => {
         Api.getActiveAlerts(),
         Api.getWeeklyPlan(curWeekKey),
         Api.getRecipes(),
-        Api.getShoppingList()
+        Api.getShoppingList(),
+        Api.getSupplyPlanContext()
       ]);
 
       const status = statusRes.data || { status: 'stable', notes: '' };
@@ -74,6 +78,39 @@ const DashboardModule = (() => {
       const recipes = recipesRes?.data || [];
       const shopping = shoppingRes?.data || [];
       const pendingShoppingCount = shopping.filter(i => !i.checked).length;
+      const supplyCtx = supplyRes || { items: [], locations: [], stockRows: [], openOrderLines: [], suppliers: [] };
+      cachedSupplyCtx = supplyCtx;
+
+      // Cálculo de reposición e insumos críticos (Fase 10)
+      let supplyPlan = { rows: [], counts: {} };
+      try {
+        if (typeof InventoryCalc !== 'undefined' && InventoryCalc.buildSupplyPlan) {
+          supplyPlan = InventoryCalc.buildSupplyPlan(supplyCtx, { now: Api.nowISO() });
+        }
+      } catch (err) {
+        console.warn('Aviso al calcular plan de insumos:', err);
+      }
+
+      const supplyItems = supplyCtx.items || [];
+      const habLoc = (supplyCtx.locations || []).find(l => l.isUsagePoint) || { id: 'loc_hab', name: 'Habitación' };
+      const criticalItems = supplyItems.filter(i => i.isCritical && (i.primaryLocationId || 'loc_hab') === habLoc.id);
+
+      const nowMs = now.getTime();
+      let criticalOverdueCount = 0;
+      criticalItems.forEach(item => {
+        const row = (supplyPlan.rows || []).find(r => r.item.id === item.id);
+        const lastReview = row?.summary?.lastCountedAt ? new Date(row.summary.lastCountedAt).getTime() : 0;
+        const freqHours = item.reviewEveryHours || 26; // 26h regla para críticos
+        const elapsedHours = lastReview ? (nowMs - lastReview) / 3600000 : Infinity;
+        if (elapsedHours >= (freqHours - 2)) {
+          criticalOverdueCount++;
+        }
+      });
+
+      const reorderRows = (supplyPlan.rows || []).filter(r => r.suggestedLine != null || r.status?.status === 'urgent' || r.status?.status === 'reorder');
+      const reorderCount = reorderRows.length;
+      const openOrders = supplyCtx.openOrderLines || [];
+      const inTransitCount = openOrders.filter(ol => ol.status === 'ordered' || ol.status === 'partially_received').length;
 
       // Menú de hoy (RF-74)
       const recipeMap = new Map(recipes.map(r => [r.id, r]));
@@ -157,6 +194,28 @@ const DashboardModule = (() => {
       const statusLabels = { stable: '🟢 Estable', alert: '🟡 Alerta', critical: '🔴 Crítico' };
 
       el.innerHTML = `
+        <!-- Aviso destacado de revisión de insumos críticos (RF y Decisiones 4 y 5) -->
+        ${criticalOverdueCount > 0 ? `
+          <div class="card" style="margin-bottom:16px;background:rgba(239, 68, 68, 0.12);border-left:4px solid var(--critical);padding:12px 14px;">
+            <div class="flex items-center justify-between" style="flex-wrap:wrap;gap:8px;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-size:1.6rem;">⚠️</span>
+                <div>
+                  <div style="font-weight:800;color:var(--critical);font-size:0.9rem;letter-spacing:-0.01em;">
+                    REVISIÓN DE INSUMOS CRÍTICOS PENDIENTE
+                  </div>
+                  <div class="text-xs text-muted">
+                    ${criticalOverdueCount} insumo(s) crítico(s) en Habitación requieren conteo de guardia (límite 26h).
+                  </div>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm" id="dash-btn-quick-critical" style="background:var(--critical);border-color:var(--critical);font-weight:700;">
+                ⚡ Conteo Rápido
+              </button>
+            </div>
+          </div>
+        ` : ''}
+
         <!-- Estado del paciente (RF-12, RF-13) -->
         <div class="db-status-card">
           <div class="flex items-center justify-between" style="margin-bottom:10px;">
@@ -271,10 +330,10 @@ const DashboardModule = (() => {
           </div>
           <div class="quick-item" data-goto="inventory" role="button" tabindex="0">
             <div class="quick-icon">📦</div>
-            <div class="quick-val" style="color:${lowInv.length > 0 ? 'var(--alert)' : 'var(--stable)'}">
-              ${lowInv.length}
+            <div class="quick-val" style="color:${(criticalOverdueCount > 0 || reorderCount > 0) ? 'var(--critical)' : 'var(--stable)'}">
+              ${reorderCount > 0 ? reorderCount : lowInv.length}
             </div>
-            <div class="quick-label">Insumo bajo</div>
+            <div class="quick-label">${reorderCount > 0 ? 'Por pedir' : 'Insumo bajo'}</div>
           </div>
           <div class="quick-item" data-goto="food" data-subtab="planificacion" role="button" tabindex="0">
             <div class="quick-icon">🍽️</div>
@@ -282,6 +341,49 @@ const DashboardModule = (() => {
               ${totalTodayRecipesCount}
             </div>
             <div class="quick-label">Menú del día</div>
+          </div>
+        </div>
+
+        <!-- Gestión de Insumos y Oxígeno (Fase 10) -->
+        <div class="card" style="margin-bottom:16px;background:var(--bg-glass);border-left:3px solid var(--primary);">
+          <div class="flex items-center justify-between" style="margin-bottom:10px;">
+            <div class="flex items-center gap-2">
+              <span style="font-size:1.25rem;">📦</span>
+              <div class="card-title" style="margin-bottom:0;">GESTIÓN DE INSUMOS Y OXÍGENO</div>
+            </div>
+            <span class="btn btn-ghost btn-xs text-primary" style="cursor:pointer;" onclick="App.navigateTo('inventory')">Ver todo →</span>
+          </div>
+
+          <!-- Badges de estado -->
+          <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-bottom:12px;">
+            <div style="text-align:center;padding:8px 4px;background:var(--bg-subtle);border-radius:var(--r-sm);cursor:pointer;" onclick="App.navigateTo('inventory', 'relay')">
+              <div style="font-size:1.1rem;font-weight:800;color:${criticalOverdueCount > 0 ? 'var(--critical)' : 'var(--stable)'};">
+                ${criticalOverdueCount > 0 ? `⚠️ ${criticalOverdueCount}` : '✓ Al día'}
+              </div>
+              <div class="text-xs text-muted" style="font-size:0.7rem;">Críticos hab.</div>
+            </div>
+            <div style="text-align:center;padding:8px 4px;background:var(--bg-subtle);border-radius:var(--r-sm);cursor:pointer;" onclick="App.navigateTo('inventory', 'kanban')">
+              <div style="font-size:1.1rem;font-weight:800;color:${reorderCount > 0 ? 'var(--alert)' : 'var(--stable)'};">
+                ${reorderCount}
+              </div>
+              <div class="text-xs text-muted" style="font-size:0.7rem;">Por pedir</div>
+            </div>
+            <div style="text-align:center;padding:8px 4px;background:var(--bg-subtle);border-radius:var(--r-sm);cursor:pointer;" onclick="App.navigateTo('inventory', 'kanban')">
+              <div style="font-size:1.1rem;font-weight:800;color:var(--accent);">
+                ${inTransitCount}
+              </div>
+              <div class="text-xs text-muted" style="font-size:0.7rem;">En camino</div>
+            </div>
+          </div>
+
+          <!-- Acciones rápidas de insumos -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <button class="btn btn-secondary btn-sm" id="dash-btn-empty-oxygen" style="font-size:0.8rem;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;">
+              <span>💨</span> <span>Se vació cilindro O₂</span>
+            </button>
+            <button class="btn btn-secondary btn-sm" id="dash-btn-start-relay" style="font-size:0.8rem;display:flex;align-items:center;justify-content:center;gap:6px;padding:8px;">
+              <span>📋</span> <span>Relevo de Guardia</span>
+            </button>
           </div>
         </div>
 
@@ -480,6 +582,85 @@ const DashboardModule = (() => {
     // Nota rápida de relevo
     el.querySelector('#dash-quick-note')?.addEventListener('click', () => {
       RolesModule.showAddShiftNoteModal();
+    });
+
+    // Conteo Rápido de Críticos desde banner o widget
+    el.querySelector('#dash-btn-quick-critical')?.addEventListener('click', () => {
+      if (window.InventoryModule?.showQuickCriticalModal) {
+        window.InventoryModule.showQuickCriticalModal();
+      }
+    });
+
+    // Iniciar relevo de guardia desde dashboard
+    el.querySelector('#dash-btn-start-relay')?.addEventListener('click', () => {
+      App.navigateTo('inventory', 'relay');
+      if (window.InventoryModule?.switchTab) {
+        window.InventoryModule.switchTab('relay');
+      }
+    });
+
+    // Botón rápido: Se vació cilindro de O₂
+    el.querySelector('#dash-btn-empty-oxygen')?.addEventListener('click', async () => {
+      const items = cachedSupplyCtx?.items || [];
+      const locations = cachedSupplyCtx?.locations || [];
+      const stockRows = cachedSupplyCtx?.stockRows || [];
+      const habLoc = locations.find(l => l.isUsagePoint) || { id: 'loc_hab', name: 'Habitación' };
+
+      // Encontrar ítem de oxígeno
+      const oxygenItem = items.find(i =>
+        i.oxygenFlowLpm != null ||
+        i.cylinderCapacityLiters != null ||
+        i.categoryId === 'cat_oxigeno' ||
+        /ox[ií]geno/i.test(i.name)
+      );
+
+      if (!oxygenItem) {
+        Ui.toast('No se encontró ningún ítem de oxígeno configurado en el inventario', 'warning');
+        return;
+      }
+
+      Ui.confirm(`¿Confirmas que se vació 1 cilindro de ${oxygenItem.name} en ${habLoc.name}?\nSe registrará como vacío (lleno -1, vacío +1).`, async () => {
+        const movements = InventoryCalc.buildEmptiedMovements(
+          oxygenItem.id,
+          habLoc.id,
+          Api.nowISO(),
+          () => LocalStore.uuid()
+        );
+
+        const res = await Api.recordSupplyMovements(movements);
+        if (res && res.error) {
+          Ui.toast(res.error, 'error');
+          return;
+        }
+
+        // Verificar si hay cilindros llenos en reserva
+        const reserveLocId = oxygenItem.reserveLocationId || 'loc_arm';
+        const fullInReserve = stockRows.find(s => s.itemId === oxygenItem.id && s.locationId === reserveLocId && s.stockState === 'full')?.effectiveStock ?? 0;
+        const reserveLoc = locations.find(l => l.id === reserveLocId) || { name: 'Armario Central' };
+
+        if (fullInReserve > 0) {
+          Ui.confirm(`Cilindro vacío registrado.\nHay ${fullInReserve} cilindro(s) lleno(s) en ${reserveLoc.name}.\n¿Deseas registrar el traslado de 1 cilindro lleno a la Habitación ahora?`, async () => {
+            const transferMovs = InventoryCalc.buildTransferMovements(
+              oxygenItem.id,
+              reserveLocId,
+              habLoc.id,
+              1,
+              Api.nowISO(),
+              () => LocalStore.uuid()
+            );
+            const trRes = await Api.recordSupplyMovements(transferMovs);
+            if (trRes && trRes.error) {
+              Ui.toast(trRes.error, 'error');
+            } else {
+              Ui.toast('Cilindro lleno trasladado a Habitación', 'success');
+            }
+            render();
+          });
+        } else {
+          Ui.toast('Cilindro registrado como vacío. ⚠️ No quedan cilindros llenos en reserva.', 'warning');
+          render();
+        }
+      });
     });
   };
 

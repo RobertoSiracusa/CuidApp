@@ -31,6 +31,45 @@ const Api = (() => {
   const traducirError = (err) => {
     if (!err) return null;
     const msg = String(err.message || err.details || err || '');
+
+    // 1. Mensajes específicos con prefijos de Gestión Insumos
+    const prefixes = [
+      'STOCK_LEDGER', 'UBICACION_ESPECIAL', 'UBICACION_ESTADO', 'UBICACION_ARCHIVADA',
+      'UBICACION_CON_STOCK', 'PROVEEDOR_CON_HISTORIAL', 'PROVEEDOR_ESTADO',
+      'PROVEEDOR_ARCHIVADO', 'PROVEEDOR_CON_PEDIDOS', 'UBICACION_PERMISO', 'PROVEEDOR_PERMISO'
+    ];
+    for (const p of prefixes) {
+      if (msg.includes(p + ':')) {
+        return msg.split(p + ':')[1].trim();
+      }
+    }
+
+    if (/violates foreign key constraint.*supply_locations/i.test(msg)) {
+      return 'Esta ubicación tiene historial: archívala en lugar de borrarla.';
+    }
+    if (/supply_locations_special_active_ck/i.test(msg)) {
+      return 'El punto de uso y el almacén por defecto no se pueden archivar.';
+    }
+    if (/one_open_order_per_item/i.test(msg)) {
+      return 'Este insumo ya está en camino.';
+    }
+    if (/inventory_movements_ledger_ck/i.test(msg) || /inventory_items_supply_checks/i.test(msg)) {
+      return 'Hay un dato fuera de rango; revisa cantidades y configuración.';
+    }
+    if (/supply_relays_not_future/i.test(msg)) {
+      return 'La hora del conteo no puede ser futura.';
+    }
+    if (/supply_locations_name_key/i.test(msg) || /supply_suppliers_name_key/i.test(msg)) {
+      return 'Ya existe uno con ese nombre.';
+    }
+    if (/No se puede cambiar la unidad/i.test(msg)) {
+      return 'No se puede cambiar la unidad de un medicamento que ya tiene movimientos en el inventario.';
+    }
+    if (/Los movimientos del relevo deben ser anteriores/i.test(msg)) {
+      return 'Los movimientos del relevo deben ser anteriores o iguales a la hora del conteo.';
+    }
+
+    // 2. Errores de red y sesión
     if (/network/i.test(msg) || /fetch/i.test(msg)) {
       return 'Sin conexión con el servidor. Revisa tu acceso a internet.';
     }
@@ -40,18 +79,24 @@ const Api = (() => {
     if (/row-level security/i.test(msg) || /permission denied/i.test(msg) || /No autorizado/i.test(msg)) {
       return 'No tienes permisos para realizar esta acción.';
     }
-    if (/uniq_admin_slot/i.test(msg) || /duplicate key value/i.test(msg)) {
+
+    // 3. Restricciones específicas de CuidApp existentes
+    if (/uniq_admin_slot/i.test(msg)) {
       return 'Esta dosis programada ya ha sido registrada hoy.';
     }
     if (/uniq_task_template_day/i.test(msg)) {
       return 'Esta tarea recurrente ya fue generada para el día de hoy.';
     }
-    if (/check constraint/i.test(msg) || /current_stock >= 0/i.test(msg)) {
-      return 'El stock no puede ser menor a cero.';
-    }
     if (/one_open_shift/i.test(msg)) {
       return 'Ya existe un turno abierto en el sistema.';
     }
+    if (/current_stock >= 0/i.test(msg)) {
+      return 'El stock no puede ser menor a cero.';
+    }
+    if (/duplicate key value/i.test(msg)) {
+      return 'Ya existe un registro idéntico en el sistema.';
+    }
+
     return msg || 'No se pudo completar la acción. Vuelve a intentarlo.';
   };
 
@@ -70,7 +115,13 @@ const Api = (() => {
 
   // ─── Formateadores de fecha y moneda (es-ES) ──────────────
   const nowISO = () => new Date().toISOString();
-  const todayStr = () => new Date().toISOString().split('T')[0];
+  const localDateStr = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = () => localDateStr();
 
   const formatDate = (isoStr) => {
     if (!isoStr) return '—';
@@ -370,6 +421,7 @@ const Api = (() => {
         dailyAmount: Number(m.dailyConsumption || 0),
         dailyConsumption: Number(m.dailyConsumption || 0),
         daysRemaining: m.daysRemaining != null ? Number(m.daysRemaining) : null,
+        stockControl: m.stockControl || 'dosis',
         schedules: (m.schedules || []).map(s => ({
           id: s.id,
           medicationId: s.medicationId,
@@ -407,6 +459,7 @@ const Api = (() => {
         currentStock: Math.max(0, Number(med.currentStock || 0)),
         minThreshold: Math.max(0, Number(med.minThreshold || 0)),
         manualDailyAmount: med.manualDailyAmount != null ? Number(med.manualDailyAmount) : null,
+        stockControl: med.stockControl || 'dosis',
         needsRestock: false,
         createdAt: nowISO()
       };
@@ -423,9 +476,9 @@ const Api = (() => {
       if (updates.status !== undefined) payload.status = updates.status;
       if (updates.notes !== undefined) payload.notes = updates.notes.trim();
       if (updates.unit !== undefined) payload.unit = updates.unit;
-      if (updates.currentStock !== undefined) payload.currentStock = Math.max(0, Number(updates.currentStock));
       if (updates.minThreshold !== undefined) payload.minThreshold = Math.max(0, Number(updates.minThreshold));
       if (updates.manualDailyAmount !== undefined) payload.manualDailyAmount = updates.manualDailyAmount != null ? Number(updates.manualDailyAmount) : null;
+      if (updates.stockControl !== undefined) payload.stockControl = updates.stockControl;
       if (updates.needsRestock !== undefined) payload.needsRestock = !!updates.needsRestock;
       const updated = LocalStore.update('medications', id, payload, 'medications');
       return { ok: true, data: updated };
@@ -600,12 +653,28 @@ const Api = (() => {
         currentStock: Number(i.currentStock || 0),
         unit: i.unit || 'unidad',
         minThreshold: Number(i.minThreshold || 0),
+        optimalStock: Number(i.optimalStock || 0),
+        orderUnit: i.orderUnit || 'unidad',
+        unitsPerPurchase: Number(i.unitsPerPurchase || 1),
+        isCritical: !!i.isCritical,
+        reviewEveryHours: i.reviewEveryHours != null ? Number(i.reviewEveryHours) : (i.isCritical ? 26 : 50),
+        isPao: !!i.isPao,
+        paoHours: i.paoHours != null ? Number(i.paoHours) : null,
+        oxygenFlowLpm: i.oxygenFlowLpm != null ? Number(i.oxygenFlowLpm) : null,
+        cylinderCapacityLiters: i.cylinderCapacityLiters != null ? Number(i.cylinderCapacityLiters) : null,
+        stockControl: i.stockControl || 'dosis',
+        consumptionType: i.consumptionType || 'variable',
+        medicationId: i.medicationId || null,
+        primaryLocationId: i.primaryLocationId || 'loc_hab',
+        reserveLocationId: i.reserveLocationId || 'loc_arm',
+        supplierId: i.supplierId || null,
         responsibleCareRoleId: i.responsibleCareRoleId,
         responsibleRole: rMap.get(i.responsibleCareRoleId) || null,
         notes: i.notes || '',
         avgDailyConsumption: i.avgDailyConsumption != null ? Number(i.avgDailyConsumption) : null,
         daysRemaining: i.daysRemaining != null ? Number(i.daysRemaining) : null,
-        isLow: !!i.isLow
+        isLow: !!i.isLow,
+        active: i.active !== false
       }));
     },
 
@@ -616,14 +685,39 @@ const Api = (() => {
         id: LocalStore.uuid(),
         name: item.name.trim(),
         categoryId: item.categoryId || null,
-        currentStock: Math.max(0, Number(item.currentStock || 0)),
+        currentStock: 0,
         unit: item.unit || 'unidad',
+        orderUnit: item.orderUnit || item.unit || 'unidad',
+        unitsPerPurchase: Number(item.unitsPerPurchase || 1),
         minThreshold: Math.max(0, Number(item.minThreshold || 0)),
+        optimalStock: Math.max(0, Number(item.optimalStock || 0)),
+        isCritical: !!item.isCritical,
+        reviewEveryHours: item.reviewEveryHours != null ? Number(item.reviewEveryHours) : (item.isCritical ? 26 : 50),
+        isPao: !!item.isPao,
+        paoHours: item.paoHours != null ? Number(item.paoHours) : null,
+        oxygenFlowLpm: item.oxygenFlowLpm != null ? Number(item.oxygenFlowLpm) : null,
+        cylinderCapacityLiters: item.cylinderCapacityLiters != null ? Number(item.cylinderCapacityLiters) : null,
+        stockControl: item.stockControl || 'dosis',
+        consumptionType: item.consumptionType || 'variable',
+        primaryLocationId: item.primaryLocationId || 'loc_hab',
+        reserveLocationId: item.reserveLocationId || 'loc_arm',
+        supplierId: item.supplierId || null,
         responsibleCareRoleId: item.responsibleCareRoleId || null,
         notes: (item.notes || '').trim(),
+        active: item.active !== false,
         createdAt: nowISO()
       };
       LocalStore.insert('inventoryItems', newItem, 'inventory_items');
+      if (item.currentStock && Number(item.currentStock) > 0) {
+        LocalStore.recordSupplyMovements([{
+          itemId: newItem.id,
+          locationId: newItem.primaryLocationId,
+          stockState: 'full',
+          movementType: 'count',
+          quantity: Number(item.currentStock),
+          note: 'Stock inicial al crear insumo'
+        }]);
+      }
       return { ok: true, data: newItem };
     },
 
@@ -631,11 +725,26 @@ const Api = (() => {
       const payload = {};
       if (updates.name !== undefined) payload.name = updates.name.trim();
       if (updates.categoryId !== undefined) payload.categoryId = updates.categoryId;
-      if (updates.currentStock !== undefined) payload.currentStock = Math.max(0, Number(updates.currentStock));
+      // currentStock es de solo lectura y nunca se actualiza aquí (ledger manda)
       if (updates.unit !== undefined) payload.unit = updates.unit;
+      if (updates.orderUnit !== undefined) payload.orderUnit = updates.orderUnit;
+      if (updates.unitsPerPurchase !== undefined) payload.unitsPerPurchase = Number(updates.unitsPerPurchase) || 1;
       if (updates.minThreshold !== undefined) payload.minThreshold = Math.max(0, Number(updates.minThreshold));
+      if (updates.optimalStock !== undefined) payload.optimalStock = Math.max(0, Number(updates.optimalStock));
+      if (updates.isCritical !== undefined) payload.isCritical = !!updates.isCritical;
+      if (updates.reviewEveryHours !== undefined) payload.reviewEveryHours = updates.reviewEveryHours != null ? Number(updates.reviewEveryHours) : null;
+      if (updates.isPao !== undefined) payload.isPao = !!updates.isPao;
+      if (updates.paoHours !== undefined) payload.paoHours = updates.paoHours != null ? Number(updates.paoHours) : null;
+      if (updates.oxygenFlowLpm !== undefined) payload.oxygenFlowLpm = updates.oxygenFlowLpm != null ? Number(updates.oxygenFlowLpm) : null;
+      if (updates.cylinderCapacityLiters !== undefined) payload.cylinderCapacityLiters = updates.cylinderCapacityLiters != null ? Number(updates.cylinderCapacityLiters) : null;
+      if (updates.stockControl !== undefined) payload.stockControl = updates.stockControl;
+      if (updates.consumptionType !== undefined) payload.consumptionType = updates.consumptionType;
+      if (updates.primaryLocationId !== undefined) payload.primaryLocationId = updates.primaryLocationId;
+      if (updates.reserveLocationId !== undefined) payload.reserveLocationId = updates.reserveLocationId;
+      if (updates.supplierId !== undefined) payload.supplierId = updates.supplierId;
       if (updates.responsibleCareRoleId !== undefined) payload.responsibleCareRoleId = updates.responsibleCareRoleId;
       if (updates.notes !== undefined) payload.notes = updates.notes.trim();
+      if (updates.active !== undefined) payload.active = !!updates.active;
       const updated = LocalStore.update('inventoryItems', id, payload, 'inventory_items');
       return { ok: true, data: updated };
     },
@@ -678,6 +787,286 @@ const Api = (() => {
       const cat = { id: 'cat_' + LocalStore.uuid().slice(0, 8), name: name.trim() };
       LocalStore.insert('inventoryCategories', cat);
       return { ok: true, data: cat };
+    },
+
+    // ─── Gestión Insumos (LocalAdapter) ──────────────────────
+    getSupplyLocations: async (includeArchived = false) => {
+      return LocalStore.getSupplyLocationsView(includeArchived);
+    },
+
+    addSupplyLocation: async (loc) => {
+      try {
+        const res = LocalStore.insertSupplyLocation(loc);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    updateSupplyLocation: async (id, updates) => {
+      try {
+        const res = LocalStore.updateSupplyLocation(id, updates);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    archiveSupplyLocation: async (id) => {
+      try {
+        LocalStore.archiveSupplyLocation(id);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    restoreSupplyLocation: async (id) => {
+      try {
+        LocalStore.restoreSupplyLocation(id);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    setSpecialLocation: async (id, role) => {
+      try {
+        LocalStore.setSpecialLocation(id, role);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    deleteSupplyLocation: async (id) => {
+      try {
+        LocalStore.deleteSupplyLocation(id);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    getSupplySuppliers: async (includeArchived = false) => {
+      return LocalStore.getSupplySuppliersView(includeArchived);
+    },
+
+    addSupplySupplier: async (sup) => {
+      try {
+        const res = LocalStore.insertSupplySupplier(sup);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    updateSupplySupplier: async (id, updates) => {
+      try {
+        const res = LocalStore.updateSupplySupplier(id, updates);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    archiveSupplySupplier: async (id) => {
+      try {
+        LocalStore.archiveSupplySupplier(id);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    restoreSupplySupplier: async (id) => {
+      try {
+        LocalStore.restoreSupplySupplier(id);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    deleteSupplySupplier: async (id) => {
+      try {
+        LocalStore.deleteSupplySupplier(id);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    recordSupplyMovements: async (movements) => {
+      try {
+        const res = LocalStore.recordSupplyMovements(movements);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    saveSupplyRelayFull: async (payload) => {
+      try {
+        const res = LocalStore.saveSupplyRelayFull(payload);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    markSupplyInTransit: async (supplierId, lines, clientEventId, expectedBy = null) => {
+      try {
+        const res = LocalStore.markSupplyInTransit(supplierId, lines, clientEventId, expectedBy);
+        return res;
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    receiveSupplyOrderLine: async (params) => {
+      try {
+        const res = LocalStore.receiveSupplyOrderLine(params);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    cancelSupplyOrderLine: async (lineId, reason) => {
+      try {
+        const res = LocalStore.cancelSupplyOrderLine(lineId, reason);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    voidSupplyMovement: async (movementId, reason) => {
+      try {
+        const res = LocalStore.voidSupplyMovement(movementId, reason);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    openContainer: async (itemId, locationId, openedAt) => {
+      try {
+        const res = LocalStore.openContainer(itemId, locationId, openedAt);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    closeContainer: async (containerId, closedAt, notes) => {
+      try {
+        const res = LocalStore.closeContainer(containerId, closedAt, notes);
+        return { ok: true, data: res };
+      } catch (err) {
+        return { ok: false, error: traducirError(err) };
+      }
+    },
+
+    getInventoryStockView: async (filters = {}) => {
+      return LocalStore.getInventoryStockView(filters);
+    },
+
+    getSupplyPlanContext: async (filters = {}) => {
+      return LocalStore.getSupplyPlanContext(filters);
+    },
+
+    getSupplyRelays: async (limit = 30) => {
+      const relays = [...(LocalStore.getCollection('supplyRelays') || [])].reverse();
+      const profs = LocalStore.getCollection('profiles') || [];
+      const pMap = new Map(profs.map(p => [p.id, p]));
+      return relays.slice(0, limit).map(r => ({
+        id: r.id,
+        occurredAt: r.occurredAt,
+        deliveredByProfileId: r.deliveredByProfileId,
+        deliveredByName: pMap.get(r.deliveredByProfileId)?.fullName || 'Entregador',
+        receivedByProfileId: r.receivedByProfileId,
+        receivedByName: pMap.get(r.receivedByProfileId)?.fullName || 'Receptor',
+        photoPath: r.photoPath || null,
+        clientEventId: r.clientEventId || null,
+        countsCount: r.countsCount || 0,
+        omittedCount: r.omittedCount || 0,
+        notes: r.notes || '',
+        createdAt: r.createdAt
+      }));
+    },
+
+    getSupplyOrderBatches: async (status = null) => {
+      let batches = [...(LocalStore.getCollection('supplyOrderBatches') || [])].reverse();
+      if (status) batches = batches.filter(b => b.status === status);
+      const sups = LocalStore.getCollection('supplySuppliers') || [];
+      const profs = LocalStore.getCollection('profiles') || [];
+      const sMap = new Map(sups.map(s => [s.id, s]));
+      const pMap = new Map(profs.map(p => [p.id, p]));
+      return batches.map(b => ({
+        id: b.id,
+        supplierId: b.supplierId,
+        supplierName: sMap.get(b.supplierId)?.name || 'Proveedor',
+        status: b.status,
+        linesCount: b.linesCount || 0,
+        clientEventId: b.clientEventId,
+        orderedByName: pMap.get(b.orderedByProfileId)?.fullName || 'Cuidador',
+        createdAt: b.createdAt
+      }));
+    },
+
+    getSupplyOrderLines: async (status = null) => {
+      let lines = [...(LocalStore.getCollection('supplyOrderLines') || [])];
+      if (status) lines = lines.filter(l => l.status === status);
+      const items = LocalStore.getCollection('inventoryItems') || [];
+      const sups = LocalStore.getCollection('supplySuppliers') || [];
+      const locs = LocalStore.getCollection('supplyLocations') || [];
+      const profs = LocalStore.getCollection('profiles') || [];
+      const iMap = new Map(items.map(i => [i.id, i]));
+      const sMap = new Map(sups.map(s => [s.id, s]));
+      const lMap = new Map(locs.map(l => [l.id, l]));
+      const pMap = new Map(profs.map(p => [p.id, p]));
+      return lines.map(l => {
+        const item = iMap.get(l.itemId) || {};
+        return {
+          id: l.id,
+          batchId: l.batchId,
+          supplierId: l.supplierId,
+          supplierName: sMap.get(l.supplierId)?.name || 'Proveedor',
+          itemId: l.itemId,
+          itemName: item.name || 'Insumo',
+          unit: item.unit || 'unidad',
+          targetLocationId: l.targetLocationId,
+          targetLocationName: lMap.get(l.targetLocationId)?.name || 'Almacén',
+          orderedQtyPurchase: Number(l.orderedQtyPurchase || 1),
+          unitsPerPurchase: Number(l.unitsPerPurchase || 1),
+          orderedQtyBase: Number(l.orderedQtyBase || 0),
+          receivedQtyBase: Number(l.receivedQtyBase || 0),
+          status: l.status,
+          expectedBy: l.expectedBy,
+          orderedAt: l.orderedAt,
+          receivedAt: l.receivedAt,
+          orderedByName: pMap.get(l.orderedByProfileId)?.fullName || 'Cuidador',
+          createdAt: l.createdAt
+        };
+      });
+    },
+
+    getSupplyOpenContainers: async (itemId = null) => {
+      let containers = [...(LocalStore.getCollection('supplyOpenContainers') || [])];
+      if (itemId) containers = containers.filter(c => c.itemId === itemId);
+      return containers.filter(c => !c.closedAt);
+    },
+
+    uploadRelayPhoto: async (clientEventId, blob) => {
+      return LocalStore.PhotoStore.savePhoto(clientEventId, blob);
+    },
+
+    getRelayPhotoUrl: async (clientEventId) => {
+      const blob = await LocalStore.PhotoStore.getPhoto(clientEventId);
+      if (!blob) return null;
+      return URL.createObjectURL(blob);
     },
 
     getTasksByDate: async (dateStr) => {
@@ -1543,11 +1932,12 @@ const Api = (() => {
 
         const inventory = await LocalAdapter.getInventory();
         inventory.forEach(item => {
+          if (item.medicationId) return; // Medicamentos ya procesados arriba
           if (item.isLow) {
             alerts.push({
               id: `inv_low_${item.id}`,
               type: item.currentStock === 0 ? 'critical' : 'alert',
-              title: 'Insumo bajo mínimo',
+              title: item.isCritical ? 'Insumo CRÍTICO agotado/bajo' : 'Insumo bajo mínimo',
               message: `${item.name}: ${item.currentStock} ${item.unit} (mínimo: ${item.minThreshold})`,
               module: 'inventory'
             });
@@ -1600,6 +1990,12 @@ const Api = (() => {
         administrations: await LocalAdapter.getAdministrationHistory({ limit: 500 }),
         inventory: await LocalAdapter.getInventory(),
         movements: await LocalAdapter.getInventoryMovements(null, 500),
+        supplyLocations: await LocalAdapter.getSupplyLocations(true),
+        supplySuppliers: await LocalAdapter.getSupplySuppliers(true),
+        supplyRelays: await LocalAdapter.getSupplyRelays(500),
+        supplyOrderBatches: await LocalAdapter.getSupplyOrderBatches(),
+        supplyOrderLines: await LocalAdapter.getSupplyOrderLines(),
+        supplyOpenContainers: await LocalAdapter.getSupplyOpenContainers(),
         tasks: LocalStore.getCollection('tasks') || [],
         taskTemplates: await LocalAdapter.getTaskTemplates(),
         appointments: await LocalAdapter.getAppointments(),
@@ -1947,6 +2343,7 @@ const Api = (() => {
       manualDailyAmount: m.manual_daily_amount != null ? Number(m.manual_daily_amount) : null,
       dailyAmount: Number(m.daily_amount || 0),
       daysRemaining: m.days_remaining != null ? Number(m.days_remaining) : null,
+      stockControl: m.stock_control || 'dosis',
       schedules: (m.medication_schedules || []).map(s => ({
         id: s.id,
         medicationId: s.medication_id,
@@ -1967,7 +2364,8 @@ const Api = (() => {
       notes: (med.notes || '').trim(),
       unit: med.unit || 'unidad',
       current_stock: Math.max(0, Number(med.currentStock || 0)),
-      manual_daily_amount: med.manualDailyAmount != null ? Number(med.manualDailyAmount) : null
+      manual_daily_amount: med.manualDailyAmount != null ? Number(med.manualDailyAmount) : null,
+      stock_control: med.stockControl || 'dosis'
     };
     const { data, error } = await db().from('medications').insert(payload).select().single();
     if (error) return { ok: false, error: traducirError(error) };
@@ -1983,8 +2381,8 @@ const Api = (() => {
     if (updates.status !== undefined) payload.status = updates.status;
     if (updates.notes !== undefined) payload.notes = updates.notes.trim();
     if (updates.unit !== undefined) payload.unit = updates.unit;
-    if (updates.currentStock !== undefined) payload.current_stock = Math.max(0, Number(updates.currentStock));
     if (updates.manualDailyAmount !== undefined) payload.manual_daily_amount = updates.manualDailyAmount != null ? Number(updates.manualDailyAmount) : null;
+    if (updates.stockControl !== undefined) payload.stock_control = updates.stockControl;
     if (updates.needsRestock !== undefined) payload.needs_restock = !!updates.needsRestock;
 
     const { data, error } = await db().from('medications').update(payload).eq('id', id).select().single();
@@ -2162,6 +2560,21 @@ const Api = (() => {
       currentStock: Number(i.current_stock || 0),
       unit: i.unit || 'unidad',
       minThreshold: Number(i.min_threshold || 0),
+      optimalStock: Number(i.optimal_stock || 0),
+      orderUnit: i.order_unit || i.unit || 'unidad',
+      unitsPerPurchase: Number(i.units_per_order || 1),
+      isCritical: !!i.is_critical,
+      reviewEveryHours: i.review_frequency_hours != null ? Number(i.review_frequency_hours) : (i.is_critical ? 26 : 50),
+      isPao: !!i.is_pao,
+      paoHours: i.pao_days ? i.pao_days * 24 : null,
+      oxygenFlowLpm: i.flow_rate_lpm != null ? Number(i.flow_rate_lpm) : null,
+      cylinderCapacityLiters: i.cylinder_capacity_liters != null ? Number(i.cylinder_capacity_liters) : null,
+      stockControl: i.stock_control || 'dosis',
+      consumptionType: i.consumption_type || 'variable',
+      medicationId: i.medication_id || null,
+      primaryLocationId: i.primary_location_id || 'loc_hab',
+      reserveLocationId: i.reserve_location_id || 'loc_arm',
+      supplierId: i.default_supplier_id || null,
       responsibleCareRoleId: i.responsible_care_role_id,
       responsibleRole: i.care_roles ? {
         id: i.care_roles.id,
@@ -2172,7 +2585,8 @@ const Api = (() => {
       notes: i.notes || '',
       avgDailyConsumption: i.avg_daily_consumption != null ? Number(i.avg_daily_consumption) : null,
       daysRemaining: i.days_remaining != null ? Number(i.days_remaining) : null,
-      isLow: !!i.is_low
+      isLow: !!i.is_low,
+      active: i.active !== false
     }));
   };
 
@@ -2180,14 +2594,37 @@ const Api = (() => {
     const payload = {
       name: item.name.trim(),
       category_id: item.categoryId || null,
-      current_stock: Math.max(0, Number(item.currentStock || 0)),
       unit: item.unit || 'unidad',
+      order_unit: item.orderUnit || item.unit || 'unidad',
+      units_per_order: Number(item.unitsPerPurchase || 1),
       min_threshold: Math.max(0, Number(item.minThreshold || 0)),
+      optimal_stock: Math.max(0, Number(item.optimalStock || 0)),
+      is_critical: !!item.isCritical,
+      review_frequency_hours: item.reviewEveryHours != null ? Number(item.reviewEveryHours) : (item.isCritical ? 26 : 50),
+      is_pao: !!item.isPao,
+      pao_days: item.paoHours ? Math.ceil(item.paoHours / 24) : null,
+      flow_rate_lpm: item.oxygenFlowLpm != null ? Number(item.oxygenFlowLpm) : null,
+      cylinder_capacity_liters: item.cylinderCapacityLiters != null ? Number(item.cylinderCapacityLiters) : null,
+      stock_control: item.stockControl || 'dosis',
+      consumption_type: item.consumptionType || 'variable',
+      primary_location_id: item.primaryLocationId || 'loc_hab',
+      reserve_location_id: item.reserveLocationId || 'loc_arm',
+      default_supplier_id: item.supplierId || null,
       responsible_care_role_id: item.responsibleCareRoleId || null,
       notes: (item.notes || '').trim()
     };
     const { data, error } = await db().from('inventory_items').insert(payload).select().single();
     if (error) return { ok: false, error: traducirError(error) };
+    if (item.currentStock && Number(item.currentStock) > 0) {
+      await recordSupplyMovements([{
+        itemId: data.id,
+        locationId: payload.primary_location_id,
+        stockState: 'full',
+        movementType: 'count',
+        quantity: Number(item.currentStock),
+        note: 'Stock inicial al crear insumo'
+      }]);
+    }
     return { ok: true, data };
   };
 
@@ -2195,11 +2632,26 @@ const Api = (() => {
     const payload = {};
     if (updates.name !== undefined) payload.name = updates.name.trim();
     if (updates.categoryId !== undefined) payload.category_id = updates.categoryId;
-    if (updates.currentStock !== undefined) payload.current_stock = Math.max(0, Number(updates.currentStock));
+    // current_stock es de solo lectura (ledger manda)
     if (updates.unit !== undefined) payload.unit = updates.unit;
+    if (updates.orderUnit !== undefined) payload.order_unit = updates.orderUnit;
+    if (updates.unitsPerPurchase !== undefined) payload.units_per_order = Number(updates.unitsPerPurchase) || 1;
     if (updates.minThreshold !== undefined) payload.min_threshold = Math.max(0, Number(updates.minThreshold));
+    if (updates.optimalStock !== undefined) payload.optimal_stock = Math.max(0, Number(updates.optimalStock));
+    if (updates.isCritical !== undefined) payload.is_critical = !!updates.isCritical;
+    if (updates.reviewEveryHours !== undefined) payload.review_frequency_hours = updates.reviewEveryHours != null ? Number(updates.reviewEveryHours) : null;
+    if (updates.isPao !== undefined) payload.is_pao = !!updates.isPao;
+    if (updates.paoHours !== undefined) payload.pao_days = updates.paoHours ? Math.ceil(updates.paoHours / 24) : null;
+    if (updates.oxygenFlowLpm !== undefined) payload.flow_rate_lpm = updates.oxygenFlowLpm != null ? Number(updates.oxygenFlowLpm) : null;
+    if (updates.cylinderCapacityLiters !== undefined) payload.cylinder_capacity_liters = updates.cylinderCapacityLiters != null ? Number(updates.cylinderCapacityLiters) : null;
+    if (updates.stockControl !== undefined) payload.stock_control = updates.stockControl;
+    if (updates.consumptionType !== undefined) payload.consumption_type = updates.consumptionType;
+    if (updates.primaryLocationId !== undefined) payload.primary_location_id = updates.primaryLocationId;
+    if (updates.reserveLocationId !== undefined) payload.reserve_location_id = updates.reserveLocationId;
+    if (updates.supplierId !== undefined) payload.default_supplier_id = updates.supplierId;
     if (updates.responsibleCareRoleId !== undefined) payload.responsible_care_role_id = updates.responsibleCareRoleId;
     if (updates.notes !== undefined) payload.notes = updates.notes.trim();
+    if (updates.active !== undefined) payload.active = !!updates.active;
 
     const { data, error } = await db().from('inventory_items').update(payload).eq('id', id).select().single();
     if (error) return { ok: false, error: traducirError(error) };
@@ -2258,6 +2710,455 @@ const Api = (() => {
       .single();
     if (error) return { ok: false, error: traducirError(error) };
     return { ok: true, data };
+  };
+
+  // ─── 7b. Gestión Insumos (Supabase Remoto) ──────────────────
+  const getSupplyLocations = async (includeArchived = false) => {
+    let query = db().from('supply_locations_view').select('*');
+    if (!includeArchived) query = query.eq('status', 'active');
+    const { data, error } = await query.order('is_usage_point', { ascending: false }).order('is_default_restock', { ascending: false }).order('name');
+    if (error) throw new Error(traducirError(error));
+    return data.map(l => ({
+      id: l.id,
+      name: l.name,
+      type: l.type,
+      status: l.status,
+      isDefaultRestock: !!l.is_default_restock,
+      isUsagePoint: !!l.is_usage_point,
+      reviewFrequencyHours: l.review_frequency_hours,
+      notes: l.notes || '',
+      distinctItemsCount: Number(l.distinct_items_count || 0),
+      totalUnitsCount: Number(l.total_units_count || 0),
+      createdAt: l.created_at
+    }));
+  };
+
+  const addSupplyLocation = async (loc) => {
+    const payload = {
+      name: loc.name.trim(),
+      type: loc.type || 'storage',
+      is_default_restock: !!loc.isDefaultRestock,
+      is_usage_point: !!loc.isUsagePoint,
+      review_frequency_hours: loc.reviewFrequencyHours != null ? Number(loc.reviewFrequencyHours) : null,
+      notes: (loc.notes || '').trim()
+    };
+    const { data, error } = await db().from('supply_locations').insert(payload).select().single();
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const updateSupplyLocation = async (id, updates) => {
+    const payload = {};
+    if (updates.name !== undefined) payload.name = updates.name.trim();
+    if (updates.type !== undefined) payload.type = updates.type;
+    if (updates.isDefaultRestock !== undefined) payload.is_default_restock = !!updates.isDefaultRestock;
+    if (updates.isUsagePoint !== undefined) payload.is_usage_point = !!updates.isUsagePoint;
+    if (updates.reviewFrequencyHours !== undefined) payload.review_frequency_hours = updates.reviewFrequencyHours != null ? Number(updates.reviewFrequencyHours) : null;
+    if (updates.notes !== undefined) payload.notes = updates.notes.trim();
+    const { data, error } = await db().from('supply_locations').update(payload).eq('id', id).select().single();
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const archiveSupplyLocation = async (id) => {
+    const { error } = await db().rpc('archive_supply_location', { p_location_id: id });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const restoreSupplyLocation = async (id) => {
+    const { error } = await db().rpc('restore_supply_location', { p_location_id: id });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const setSpecialLocation = async (id, role) => {
+    const { error } = await db().rpc('set_special_location', { p_location_id: id, p_role: role });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const deleteSupplyLocation = async (id) => {
+    const { error } = await db().from('supply_locations').delete().eq('id', id);
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const getSupplySuppliers = async (includeArchived = false) => {
+    let query = db().from('supply_suppliers_view').select('*');
+    if (!includeArchived) query = query.eq('status', 'active');
+    const { data, error } = await query.order('name');
+    if (error) throw new Error(traducirError(error));
+    return data.map(s => ({
+      id: s.id,
+      name: s.name,
+      contactName: s.contact_name || '',
+      phone: s.phone || '',
+      whatsapp: s.whatsapp || '',
+      leadTimeHours: Number(s.lead_time_hours || 24),
+      status: s.status,
+      notes: s.notes || '',
+      distinctItemsCount: Number(s.distinct_items_count || 0),
+      openOrdersCount: Number(s.open_orders_count || 0),
+      createdAt: s.created_at
+    }));
+  };
+
+  const addSupplySupplier = async (sup) => {
+    const payload = {
+      name: sup.name.trim(),
+      contact_name: (sup.contactName || '').trim(),
+      phone: (sup.phone || '').trim(),
+      whatsapp: (sup.whatsapp || '').trim(),
+      lead_time_hours: sup.leadTimeHours != null ? Number(sup.leadTimeHours) : 24,
+      notes: (sup.notes || '').trim()
+    };
+    const { data, error } = await db().from('supply_suppliers').insert(payload).select().single();
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const updateSupplySupplier = async (id, updates) => {
+    const payload = {};
+    if (updates.name !== undefined) payload.name = updates.name.trim();
+    if (updates.contactName !== undefined) payload.contact_name = updates.contactName.trim();
+    if (updates.phone !== undefined) payload.phone = updates.phone.trim();
+    if (updates.whatsapp !== undefined) payload.whatsapp = updates.whatsapp.trim();
+    if (updates.leadTimeHours !== undefined) payload.lead_time_hours = Number(updates.leadTimeHours);
+    if (updates.notes !== undefined) payload.notes = updates.notes.trim();
+    const { data, error } = await db().from('supply_suppliers').update(payload).eq('id', id).select().single();
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const archiveSupplySupplier = async (id) => {
+    const { error } = await db().rpc('archive_supply_supplier', { p_supplier_id: id });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const restoreSupplySupplier = async (id) => {
+    const { error } = await db().rpc('restore_supply_supplier', { p_supplier_id: id });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const deleteSupplySupplier = async (id) => {
+    const { error } = await db().from('supply_suppliers').delete().eq('id', id);
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const recordSupplyMovements = async (movements) => {
+    const { data, error } = await db().rpc('record_supply_movements', {
+      p_movements: movements.map(m => ({
+        item_id: m.itemId,
+        location_id: m.locationId,
+        stock_state: m.stockState || 'full',
+        movement_type: m.movementType,
+        quantity: Number(m.quantity || 0),
+        qty_absolute: m.qtyAbsolute != null ? Number(m.qtyAbsolute) : null,
+        note: m.note || null,
+        group_id: m.groupId || null,
+        client_event_id: m.clientEventId || null,
+        occurred_at: m.occurredAt || nowISO()
+      }))
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const saveSupplyRelayFull = async (payload) => {
+    const { data, error } = await db().rpc('save_supply_relay_full', {
+      p_relay: {
+        occurred_at: payload.relay.occurredAt,
+        delivered_by_profile_id: payload.relay.deliveredByProfileId,
+        received_by_profile_id: payload.relay.receivedByProfileId,
+        photo_path: payload.relay.photoPath || null,
+        client_event_id: payload.relay.clientEventId || null,
+        counts_count: payload.relay.countsCount || 0,
+        omitted_count: payload.relay.omittedCount || 0,
+        notes: payload.relay.notes || null
+      },
+      p_lines: (payload.lines || []).map(l => ({
+        item_id: l.itemId,
+        location_id: l.locationId,
+        stock_state: l.stockState || 'full',
+        counted_qty: l.countedQty != null ? Number(l.countedQty) : null,
+        is_omitted: !!l.isOmitted,
+        discrepancy: l.discrepancy != null ? Number(l.discrepancy) : null,
+        discrepancy_reason: l.discrepancyReason || null
+      })),
+      p_movements: (payload.movements || []).map(m => ({
+        item_id: m.itemId,
+        location_id: m.locationId,
+        stock_state: m.stockState || 'full',
+        movement_type: m.movementType,
+        quantity: Number(m.quantity || 0),
+        qty_absolute: m.qtyAbsolute != null ? Number(m.qtyAbsolute) : null,
+        note: m.note || null,
+        group_id: m.groupId || null,
+        client_event_id: m.clientEventId || null,
+        occurred_at: m.occurredAt || payload.relay.occurredAt
+      }))
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const markSupplyInTransit = async (supplierId, lines, clientEventId, expectedBy = null) => {
+    const { data, error } = await db().rpc('mark_supply_in_transit', {
+      p_supplier_id: supplierId || null,
+      p_lines: lines.map(l => ({
+        item_id: l.itemId,
+        ordered_qty_purchase: Number(l.orderedQtyPurchase || 1),
+        units_per_purchase: Number(l.unitsPerPurchase || 1),
+        ordered_qty_base: Number(l.orderedQtyBase || 0),
+        target_location_id: l.targetLocationId || null
+      })),
+      p_client_event_id: clientEventId || null,
+      p_expected_by: expectedBy || null
+    });
+    if (error) {
+      if (error.message?.includes('one_open_order_per_item')) {
+        return { ok: false, conflict: true, error: 'Este insumo ya está en camino.' };
+      }
+      return { ok: false, error: traducirError(error) };
+    }
+    return { ok: true, data };
+  };
+
+  const receiveSupplyOrderLine = async (params) => {
+    const { data, error } = await db().rpc('receive_supply_order_line', {
+      p_line_id: params.lineId,
+      p_received_qty_base: Number(params.receivedQtyBase),
+      p_client_event_id: params.clientEventId || null,
+      p_location_id: params.locationId || null,
+      p_empties_sent: Number(params.emptiesSent || 0),
+      p_cost: Number(params.cost || 0),
+      p_received_at: params.receivedAt || nowISO()
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const cancelSupplyOrderLine = async (lineId, reason) => {
+    const { data, error } = await db().rpc('cancel_supply_order_line', {
+      p_line_id: lineId,
+      p_reason: reason || 'Cancelado por usuario'
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const voidSupplyMovement = async (movementId, reason) => {
+    const { data, error } = await db().rpc('void_supply_movement', {
+      p_movement_id: movementId,
+      p_reason: reason || 'Anulado por usuario'
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const openContainer = async (itemId, locationId, openedAt) => {
+    const { data, error } = await db().rpc('open_container', {
+      p_item_id: itemId,
+      p_location_id: locationId || null,
+      p_opened_at: openedAt || nowISO()
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const closeContainer = async (containerId, closedAt, notes) => {
+    const { data, error } = await db().rpc('close_container', {
+      p_container_id: containerId,
+      p_closed_at: closedAt || nowISO(),
+      p_notes: notes || null
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data };
+  };
+
+  const getInventoryStockView = async (filters = {}) => {
+    let query = db().from('inventory_stock_view').select('*');
+    if (filters.itemId) query = query.eq('item_id', filters.itemId);
+    if (filters.locationId) query = query.eq('location_id', filters.locationId);
+    if (filters.stockState) query = query.eq('stock_state', filters.stockState);
+    const { data, error } = await query;
+    if (error) throw new Error(traducirError(error));
+    return data.map(r => ({
+      itemId: r.item_id,
+      locationId: r.location_id,
+      stockState: r.stock_state,
+      effectiveStock: Number(r.effective_stock || 0),
+      lastMovementAt: r.last_movement_at,
+      lastCountAt: r.last_count_at
+    }));
+  };
+
+  const getSupplyPlanContext = async (filters = {}) => {
+    const [itemsRes, stockRes, locsRes, supsRes, linesRes] = await Promise.all([
+      db().from('inventory_items_view').select('*').eq('active', true),
+      db().from('inventory_stock_view').select('*'),
+      db().from('supply_locations').select('*').eq('status', 'active'),
+      db().from('supply_suppliers').select('*').eq('status', 'active'),
+      db().from('supply_order_lines').select('*').eq('status', 'in_transit')
+    ]);
+    if (itemsRes.error) throw new Error(traducirError(itemsRes.error));
+    return {
+      items: (itemsRes.data || []).map(i => ({
+        id: i.id,
+        name: i.name,
+        unit: i.unit,
+        orderUnit: i.order_unit || i.unit,
+        unitsPerPurchase: Number(i.units_per_order || 1),
+        minThreshold: Number(i.min_threshold || 0),
+        optimalStock: Number(i.optimal_stock || 0),
+        isCritical: !!i.is_critical,
+        reviewEveryHours: i.review_frequency_hours != null ? Number(i.review_frequency_hours) : (i.is_critical ? 26 : 50),
+        isPao: !!i.is_pao,
+        paoHours: i.pao_days ? i.pao_days * 24 : null,
+        oxygenFlowLpm: i.flow_rate_lpm != null ? Number(i.flow_rate_lpm) : null,
+        cylinderCapacityLiters: i.cylinder_capacity_liters != null ? Number(i.cylinder_capacity_liters) : null,
+        stockControl: i.stock_control || 'dosis',
+        consumptionType: i.consumption_type || 'variable',
+        primaryLocationId: i.primary_location_id || 'loc_hab',
+        reserveLocationId: i.reserve_location_id || 'loc_arm',
+        supplierId: i.default_supplier_id || null,
+        leadTimeHours: 24,
+        safetyMarginDays: 2,
+        reviewPeriodDays: 2,
+        active: true
+      })),
+      stockRows: (stockRes.data || []).map(s => ({
+        itemId: s.item_id,
+        locationId: s.location_id,
+        stockState: s.stock_state,
+        effectiveStock: Number(s.effective_stock || 0)
+      })),
+      locations: (locsRes.data || []).map(l => ({
+        id: l.id,
+        name: l.name,
+        isUsagePoint: !!l.is_usage_point,
+        isDefaultRestock: !!l.is_default_restock
+      })),
+      suppliers: (supsRes.data || []).map(s => ({
+        id: s.id,
+        name: s.name,
+        leadTimeHours: Number(s.lead_time_hours || 24),
+        phone: s.phone,
+        whatsapp: s.whatsapp
+      })),
+      openOrderLines: (linesRes.data || []).map(ol => ({
+        id: ol.id,
+        itemId: ol.item_id,
+        supplierId: ol.supplier_id,
+        orderedQtyBase: Number(ol.ordered_qty_base || 0),
+        status: ol.status,
+        expectedBy: ol.expected_by,
+        orderedAt: ol.ordered_at
+      }))
+    };
+  };
+
+  const getSupplyRelays = async (limit = 30) => {
+    const { data, error } = await db()
+      .from('supply_relays')
+      .select('*, delivered:profiles!delivered_by_profile_id(full_name), received:profiles!received_by_profile_id(full_name)')
+      .order('occurred_at', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(traducirError(error));
+    return data.map(r => ({
+      id: r.id,
+      occurredAt: r.occurred_at,
+      deliveredByProfileId: r.delivered_by_profile_id,
+      deliveredByName: r.delivered?.full_name || 'Entregador',
+      receivedByProfileId: r.received_by_profile_id,
+      receivedByName: r.received?.full_name || 'Receptor',
+      photoPath: r.photo_path || null,
+      clientEventId: r.client_event_id || null,
+      countsCount: r.counts_count || 0,
+      omittedCount: r.omitted_count || 0,
+      notes: r.notes || '',
+      createdAt: r.created_at
+    }));
+  };
+
+  const getSupplyOrderBatches = async (status = null) => {
+    let query = db().from('supply_order_batches').select('*, supply_suppliers(name), profiles(full_name)').order('created_at', { ascending: false });
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query;
+    if (error) throw new Error(traducirError(error));
+    return data.map(b => ({
+      id: b.id,
+      supplierId: b.supplier_id,
+      supplierName: b.supply_suppliers?.name || 'Proveedor',
+      status: b.status,
+      linesCount: b.lines_count || 0,
+      clientEventId: b.client_event_id,
+      orderedByName: b.profiles?.full_name || 'Cuidador',
+      createdAt: b.created_at
+    }));
+  };
+
+  const getSupplyOrderLines = async (status = null) => {
+    let query = db().from('supply_order_lines').select('*, inventory_items(name, unit), supply_suppliers(name), supply_locations(name), profiles(full_name)').order('created_at', { ascending: false });
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query;
+    if (error) throw new Error(traducirError(error));
+    return data.map(l => ({
+      id: l.id,
+      batchId: l.batch_id,
+      supplierId: l.supplier_id,
+      supplierName: l.supply_suppliers?.name || 'Proveedor',
+      itemId: l.item_id,
+      itemName: l.inventory_items?.name || 'Insumo',
+      unit: l.inventory_items?.unit || 'unidad',
+      targetLocationId: l.target_location_id,
+      targetLocationName: l.supply_locations?.name || 'Almacén',
+      orderedQtyPurchase: Number(l.ordered_qty_purchase || 1),
+      unitsPerPurchase: Number(l.units_per_purchase || 1),
+      orderedQtyBase: Number(l.ordered_qty_base || 0),
+      receivedQtyBase: Number(l.received_qty_base || 0),
+      status: l.status,
+      expectedBy: l.expected_by,
+      orderedAt: l.ordered_at,
+      receivedAt: l.received_at,
+      orderedByName: l.profiles?.full_name || 'Cuidador',
+      createdAt: l.created_at
+    }));
+  };
+
+  const getSupplyOpenContainers = async (itemId = null) => {
+    let query = db().from('supply_open_containers').select('*, inventory_items(name, unit), supply_locations(name)').is('closed_at', null);
+    if (itemId) query = query.eq('item_id', itemId);
+    const { data, error } = await query;
+    if (error) throw new Error(traducirError(error));
+    return data.map(c => ({
+      id: c.id,
+      itemId: c.item_id,
+      itemName: c.inventory_items?.name,
+      locationId: c.location_id,
+      locationName: c.supply_locations?.name,
+      openedAt: c.opened_at,
+      closedAt: c.closed_at
+    }));
+  };
+
+  const uploadRelayPhoto = async (clientEventId, blob) => {
+    const filePath = `relays/${clientEventId}.jpg`;
+    const { data, error } = await db().storage.from('relay-photos').upload(filePath, blob, {
+      contentType: 'image/jpeg',
+      upsert: true
+    });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, path: filePath };
+  };
+
+  const getRelayPhotoUrl = async (clientEventId) => {
+    const { data } = db().storage.from('relay-photos').getPublicUrl(`relays/${clientEventId}.jpg`);
+    return data?.publicUrl || null;
   };
 
   // ─── 8. Tareas y Plantillas (RF-58 .. RF-66) ───────────────
@@ -2963,11 +3864,12 @@ const Api = (() => {
       // 3. Ítems de inventario bajo umbral mínimo
       const inventory = await getInventory();
       inventory.forEach(item => {
+        if (item.medicationId) return; // Medicamentos ya procesados arriba
         if (item.isLow) {
           alerts.push({
             id: `inv_low_${item.id}`,
             type: item.currentStock === 0 ? 'critical' : 'alert',
-            title: 'Insumo bajo mínimo',
+            title: item.isCritical ? 'Insumo CRÍTICO agotado/bajo' : 'Insumo bajo mínimo',
             message: `${item.name}: ${item.currentStock} ${item.unit} (mínimo: ${item.minThreshold})`,
             module: 'inventory'
           });
@@ -3005,7 +3907,9 @@ const Api = (() => {
       settings, patientStatus, careRoles, profiles, shifts,
       shiftNotes, medications, restocks, administrations,
       inventory, movements, tasks, taskTemplates, appointments,
-      recipes, weeklyPlan, complementos, shopping, expenses
+      recipes, weeklyPlan, complementos, shopping, expenses,
+      supplyLocations, supplySuppliers, supplyRelays, supplyOrderBatches,
+      supplyOrderLines, supplyOpenContainers
     ] = await Promise.all([
       getSettings(),
       getPatientStatus(),
@@ -3025,7 +3929,13 @@ const Api = (() => {
       getWeeklyPlan(),
       getComplementos(),
       getShoppingList(),
-      getExpenses({ pageSize: 1000 })
+      getExpenses({ pageSize: 1000 }),
+      getSupplyLocations(true),
+      getSupplySuppliers(true),
+      getSupplyRelays(500),
+      getSupplyOrderBatches(),
+      getSupplyOrderLines(),
+      getSupplyOpenContainers()
     ]);
 
     const backup = {
@@ -3045,6 +3955,12 @@ const Api = (() => {
       administrations,
       inventory,
       movements,
+      supplyLocations,
+      supplySuppliers,
+      supplyRelays,
+      supplyOrderBatches,
+      supplyOrderLines,
+      supplyOpenContainers,
       tasks: tasks.data || [],
       taskTemplates,
       appointments,
@@ -3198,6 +4114,37 @@ const Api = (() => {
     getInventoryMovements,
     getInventoryCategories,
     addInventoryCategory,
+
+    // Gestión Insumos
+    getSupplyLocations,
+    addSupplyLocation,
+    updateSupplyLocation,
+    archiveSupplyLocation,
+    restoreSupplyLocation,
+    setSpecialLocation,
+    deleteSupplyLocation,
+    getSupplySuppliers,
+    addSupplySupplier,
+    updateSupplySupplier,
+    archiveSupplySupplier,
+    restoreSupplySupplier,
+    deleteSupplySupplier,
+    recordSupplyMovements,
+    saveSupplyRelayFull,
+    markSupplyInTransit,
+    receiveSupplyOrderLine,
+    cancelSupplyOrderLine,
+    voidSupplyMovement,
+    openContainer,
+    closeContainer,
+    getInventoryStockView,
+    getSupplyPlanContext,
+    getSupplyRelays,
+    getSupplyOrderBatches,
+    getSupplyOrderLines,
+    getSupplyOpenContainers,
+    uploadRelayPhoto,
+    getRelayPhotoUrl,
 
     // Tareas
     getTasksByDate,

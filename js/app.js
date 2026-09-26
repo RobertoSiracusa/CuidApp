@@ -39,6 +39,10 @@ const App = (() => {
       const fm = window.FoodModule || (typeof FoodModule !== 'undefined' ? FoodModule : null);
       if (fm?.setTab) fm.setTab(subTab);
     }
+    if (panelId === 'inventory' && subTab) {
+      const im = window.InventoryModule || (typeof InventoryModule !== 'undefined' ? InventoryModule : null);
+      if (im?.switchTab) im.switchTab(subTab);
+    }
 
     // Despacho al módulo correspondiente
     const modules = {
