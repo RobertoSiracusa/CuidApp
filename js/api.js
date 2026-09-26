@@ -31,6 +31,16 @@ const Api = (() => {
   const traducirError = (err) => {
     if (!err) return null;
     const msg = String(err.message || err.details || err || '');
+
+    // 1. Control de insumos
+    if (/stock_items_name_key/i.test(msg)) {
+      return 'Ya existe un insumo con ese nombre.';
+    }
+    if (/stock_checks_quantity_check|stock_items_target_stock_check/i.test(msg)) {
+      return 'La cantidad no puede ser negativa.';
+    }
+
+    // 2. Errores de red y sesión
     if (/network/i.test(msg) || /fetch/i.test(msg)) {
       return 'Sin conexión con el servidor. Revisa tu acceso a internet.';
     }
@@ -40,18 +50,15 @@ const Api = (() => {
     if (/row-level security/i.test(msg) || /permission denied/i.test(msg) || /No autorizado/i.test(msg)) {
       return 'No tienes permisos para realizar esta acción.';
     }
-    if (/uniq_admin_slot/i.test(msg) || /duplicate key value/i.test(msg)) {
-      return 'Esta dosis programada ya ha sido registrada hoy.';
-    }
-    if (/uniq_task_template_day/i.test(msg)) {
-      return 'Esta tarea recurrente ya fue generada para el día de hoy.';
-    }
-    if (/check constraint/i.test(msg) || /current_stock >= 0/i.test(msg)) {
-      return 'El stock no puede ser menor a cero.';
-    }
+
+    // 3. Restricciones específicas de CuidApp existentes
     if (/one_open_shift/i.test(msg)) {
       return 'Ya existe un turno abierto en el sistema.';
     }
+    if (/duplicate key value/i.test(msg)) {
+      return 'Ya existe un registro idéntico en el sistema.';
+    }
+
     return msg || 'No se pudo completar la acción. Vuelve a intentarlo.';
   };
 
@@ -70,7 +77,13 @@ const Api = (() => {
 
   // ─── Formateadores de fecha y moneda (es-ES) ──────────────
   const nowISO = () => new Date().toISOString();
-  const todayStr = () => new Date().toISOString().split('T')[0];
+  const localDateStr = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = () => localDateStr();
 
   const formatDate = (isoStr) => {
     if (!isoStr) return '—';
@@ -123,7 +136,7 @@ const Api = (() => {
 
   /**
    * Envuelve retornos para soportar simultáneamente desestructuración directa
-   * (e.g. const [a, b] = await Api.getMedications()) y wrappers con .data (e.g. res.data)
+   * (e.g. const [a, b] = await Api.getRecipes()) y wrappers con .data (e.g. res.data)
    */
   const wrap = (val) => {
     if (val === null || val === undefined) {
@@ -147,7 +160,6 @@ const Api = (() => {
 
   const LocalAdapter = {
     bootstrap: async () => {
-      LocalStore.generateRecurringTasks();
       return { ok: true };
     },
 
@@ -349,589 +361,6 @@ const Api = (() => {
         if (!n.readAt) n.readAt = nowISO();
       });
       LocalStore.save();
-      return { ok: true };
-    },
-
-    getMedications: async () => {
-      const meds = LocalStore.getMedicationsView();
-      return meds.map(m => ({
-        id: m.id,
-        name: m.name,
-        prescriber: m.prescriber || '',
-        indication: m.indication || '',
-        startDate: m.startDate || m.start_date,
-        status: m.status || 'active',
-        notes: m.notes || '',
-        needsRestock: !!m.needsRestock,
-        unit: m.unit || 'unidad',
-        currentStock: Number(m.currentStock || 0),
-        minThreshold: Number(m.minThreshold || 0),
-        manualDailyAmount: m.manualDailyAmount != null ? Number(m.manualDailyAmount) : null,
-        dailyAmount: Number(m.dailyConsumption || 0),
-        dailyConsumption: Number(m.dailyConsumption || 0),
-        daysRemaining: m.daysRemaining != null ? Number(m.daysRemaining) : null,
-        schedules: (m.schedules || []).map(s => ({
-          id: s.id,
-          medicationId: s.medicationId,
-          timeOfDay: (s.timeOfDay || s.scheduledTime || '08:00').slice(0, 5),
-          scheduledTime: (s.timeOfDay || s.scheduledTime || '08:00').slice(0, 5),
-          dose: Number(s.dose || 1),
-          active: s.active !== false
-        }))
-      }));
-    },
-
-    getMedicationSchedules: async (medId) => {
-      let scheds = LocalStore.getCollection('medicationSchedules') || [];
-      if (medId) scheds = scheds.filter(s => s.medicationId === medId);
-      return scheds.map(s => ({
-        id: s.id,
-        medicationId: s.medicationId,
-        timeOfDay: (s.timeOfDay || s.scheduledTime || '08:00').slice(0, 5),
-        scheduledTime: (s.timeOfDay || s.scheduledTime || '08:00').slice(0, 5),
-        dose: Number(s.dose || 1),
-        active: s.active !== false
-      }));
-    },
-
-    addMedication: async (med) => {
-      const item = {
-        id: LocalStore.uuid(),
-        name: med.name.trim(),
-        prescriber: (med.prescriber || '').trim(),
-        indication: (med.indication || '').trim(),
-        startDate: med.startDate || todayStr(),
-        status: med.status || 'active',
-        notes: (med.notes || '').trim(),
-        unit: med.unit || 'unidad',
-        currentStock: Math.max(0, Number(med.currentStock || 0)),
-        minThreshold: Math.max(0, Number(med.minThreshold || 0)),
-        manualDailyAmount: med.manualDailyAmount != null ? Number(med.manualDailyAmount) : null,
-        needsRestock: false,
-        createdAt: nowISO()
-      };
-      LocalStore.insert('medications', item, 'medications');
-      return { ok: true, data: item };
-    },
-
-    updateMedication: async (id, updates) => {
-      const payload = {};
-      if (updates.name !== undefined) payload.name = updates.name.trim();
-      if (updates.prescriber !== undefined) payload.prescriber = updates.prescriber.trim();
-      if (updates.indication !== undefined) payload.indication = updates.indication.trim();
-      if (updates.startDate !== undefined) payload.startDate = updates.startDate;
-      if (updates.status !== undefined) payload.status = updates.status;
-      if (updates.notes !== undefined) payload.notes = updates.notes.trim();
-      if (updates.unit !== undefined) payload.unit = updates.unit;
-      if (updates.currentStock !== undefined) payload.currentStock = Math.max(0, Number(updates.currentStock));
-      if (updates.minThreshold !== undefined) payload.minThreshold = Math.max(0, Number(updates.minThreshold));
-      if (updates.manualDailyAmount !== undefined) payload.manualDailyAmount = updates.manualDailyAmount != null ? Number(updates.manualDailyAmount) : null;
-      if (updates.needsRestock !== undefined) payload.needsRestock = !!updates.needsRestock;
-      const updated = LocalStore.update('medications', id, payload, 'medications');
-      return { ok: true, data: updated };
-    },
-
-    deleteMedication: async (id) => {
-      LocalStore.remove('medications', id, 'medications');
-      const allScheds = LocalStore.getCollection('medicationSchedules');
-      const remaining = allScheds.filter(s => s.medicationId !== id);
-      allScheds.length = 0;
-      allScheds.push(...remaining);
-      LocalStore.save();
-      return { ok: true };
-    },
-
-    addMedicationSchedule: async ({ medicationId, timeOfDay, scheduledTime, dose }) => {
-      const time = (scheduledTime || timeOfDay || '08:00').slice(0, 5);
-      const sched = {
-        id: LocalStore.uuid(),
-        medicationId,
-        timeOfDay: time,
-        scheduledTime: time,
-        dose: Number(dose || 1),
-        active: true,
-        createdAt: nowISO()
-      };
-      LocalStore.insert('medicationSchedules', sched, 'medication_schedules');
-      return { ok: true, data: sched };
-    },
-
-    updateMedicationSchedule: async (id, updates) => {
-      const payload = {};
-      if (updates.timeOfDay !== undefined || updates.scheduledTime !== undefined) {
-        const time = (updates.scheduledTime || updates.timeOfDay).slice(0, 5);
-        payload.timeOfDay = time;
-        payload.scheduledTime = time;
-      }
-      if (updates.dose !== undefined) payload.dose = Number(updates.dose);
-      if (updates.active !== undefined) payload.active = !!updates.active;
-      const updated = LocalStore.update('medicationSchedules', id, payload, 'medication_schedules');
-      return { ok: true, data: updated };
-    },
-
-    deleteMedicationSchedule: async (id) => {
-      LocalStore.remove('medicationSchedules', id, 'medication_schedules');
-      return { ok: true };
-    },
-
-    recordRestock: async ({ medicationId, quantity, establishment = '', cost = 0 }) => {
-      try {
-        const restockId = LocalStore.recordRestock({ medicationId, quantity, establishment, cost });
-        return { ok: true, restockId, data: restockId };
-      } catch (err) {
-        return { ok: false, error: err.message };
-      }
-    },
-
-    getRestockHistory: async (medicationId) => {
-      let restocks = [...(LocalStore.getCollection('medicationRestocks') || [])].reverse();
-      if (medicationId) restocks = restocks.filter(r => r.medicationId === medicationId);
-      const meds = LocalStore.getCollection('medications') || [];
-      const profs = LocalStore.getCollection('profiles') || [];
-      const medMap = new Map(meds.map(m => [m.id, m]));
-      const pMap = new Map(profs.map(p => [p.id, p]));
-      return restocks.map(r => ({
-        id: r.id,
-        medicationId: r.medicationId,
-        medicationName: medMap.get(r.medicationId)?.name || 'Medicamento',
-        quantity: Number(r.quantity),
-        establishment: r.establishment || '',
-        cost: Number(r.cost || 0),
-        managedByName: pMap.get(r.managedBy)?.fullName || 'Sistema',
-        createdAt: r.createdAt
-      }));
-    },
-
-    getTodayAdministrations: async () => {
-      const today = todayStr();
-      const admins = (LocalStore.getCollection('medicationAdministrations') || []).filter(a => a.scheduledDate === today);
-      return admins.map(a => ({
-        id: a.id,
-        medicationId: a.medicationId,
-        scheduleId: a.scheduleId,
-        scheduledDate: a.scheduledDate,
-        scheduledTime: a.scheduledTime ? a.scheduledTime.slice(0, 5) : null,
-        administeredAt: a.administeredAt,
-        administeredByName: a.administeredByName || 'Cuidador',
-        status: a.status,
-        dose: Number(a.dose || 1),
-        notes: a.notes || ''
-      }));
-    },
-
-    getAdministrations: async (filter = {}) => {
-      let admins = [...(LocalStore.getCollection('medicationAdministrations') || [])];
-      if (filter.date) admins = admins.filter(a => a.scheduledDate === filter.date);
-      if (filter.medicationId) admins = admins.filter(a => a.medicationId === filter.medicationId);
-      return admins.map(a => ({
-        id: a.id,
-        medicationId: a.medicationId,
-        scheduleId: a.scheduleId,
-        scheduledDate: a.scheduledDate,
-        scheduledTime: a.scheduledTime ? a.scheduledTime.slice(0, 5) : null,
-        administeredAt: a.administeredAt,
-        administeredByName: a.administeredByName || 'Cuidador',
-        status: a.status,
-        dose: Number(a.dose || 1),
-        notes: a.notes || ''
-      }));
-    },
-
-    recordAdministration: async ({ medicationId, scheduleId, scheduledDate, scheduledTime, status, dose, notes }) => {
-      try {
-        const adminId = LocalStore.recordAdministration({
-          medicationId,
-          scheduleId,
-          scheduledDate,
-          scheduledTime,
-          status,
-          dose,
-          notes
-        });
-        return { ok: true, adminId, data: adminId };
-      } catch (err) {
-        return { ok: false, error: err.message };
-      }
-    },
-
-    undoAdministration: async (id) => {
-      try {
-        LocalStore.undoAdministration(id);
-        return { ok: true };
-      } catch (err) {
-        return { ok: false, error: err.message };
-      }
-    },
-
-    getAdministrationHistory: async ({ medicationId, fromDate, toDate, limit = 100 } = {}) => {
-      let admins = [...(LocalStore.getCollection('medicationAdministrations') || [])].reverse();
-      if (medicationId) admins = admins.filter(a => a.medicationId === medicationId);
-      if (fromDate) admins = admins.filter(a => a.scheduledDate >= fromDate);
-      if (toDate) admins = admins.filter(a => a.scheduledDate <= toDate);
-      const meds = LocalStore.getCollection('medications') || [];
-      const medMap = new Map(meds.map(m => [m.id, m]));
-      return admins.slice(0, limit).map(a => {
-        const m = medMap.get(a.medicationId) || {};
-        return {
-          id: a.id,
-          medicationId: a.medicationId,
-          medicationName: m.name || 'Medicamento',
-          unit: m.unit || 'unidad',
-          scheduledDate: a.scheduledDate,
-          scheduledTime: a.scheduledTime ? a.scheduledTime.slice(0, 5) : null,
-          administeredAt: a.administeredAt,
-          administeredByName: a.administeredByName || 'Cuidador',
-          status: a.status,
-          dose: Number(a.dose || 1),
-          notes: a.notes || ''
-        };
-      });
-    },
-
-    getInventory: async () => {
-      const items = LocalStore.getInventoryItemsView();
-      const roles = LocalStore.getCollection('careRoles') || [];
-      const rMap = new Map(roles.map(r => [r.id, r]));
-      return items.map(i => ({
-        id: i.id,
-        name: i.name,
-        categoryId: i.categoryId,
-        categoryName: i.categoryName || 'Otros',
-        currentStock: Number(i.currentStock || 0),
-        unit: i.unit || 'unidad',
-        minThreshold: Number(i.minThreshold || 0),
-        responsibleCareRoleId: i.responsibleCareRoleId,
-        responsibleRole: rMap.get(i.responsibleCareRoleId) || null,
-        notes: i.notes || '',
-        avgDailyConsumption: i.avgDailyConsumption != null ? Number(i.avgDailyConsumption) : null,
-        daysRemaining: i.daysRemaining != null ? Number(i.daysRemaining) : null,
-        isLow: !!i.isLow
-      }));
-    },
-
-    getInventoryItems: async () => LocalAdapter.getInventory(),
-
-    addInventoryItem: async (item) => {
-      const newItem = {
-        id: LocalStore.uuid(),
-        name: item.name.trim(),
-        categoryId: item.categoryId || null,
-        currentStock: Math.max(0, Number(item.currentStock || 0)),
-        unit: item.unit || 'unidad',
-        minThreshold: Math.max(0, Number(item.minThreshold || 0)),
-        responsibleCareRoleId: item.responsibleCareRoleId || null,
-        notes: (item.notes || '').trim(),
-        createdAt: nowISO()
-      };
-      LocalStore.insert('inventoryItems', newItem, 'inventory_items');
-      return { ok: true, data: newItem };
-    },
-
-    updateInventoryItem: async (id, updates) => {
-      const payload = {};
-      if (updates.name !== undefined) payload.name = updates.name.trim();
-      if (updates.categoryId !== undefined) payload.categoryId = updates.categoryId;
-      if (updates.currentStock !== undefined) payload.currentStock = Math.max(0, Number(updates.currentStock));
-      if (updates.unit !== undefined) payload.unit = updates.unit;
-      if (updates.minThreshold !== undefined) payload.minThreshold = Math.max(0, Number(updates.minThreshold));
-      if (updates.responsibleCareRoleId !== undefined) payload.responsibleCareRoleId = updates.responsibleCareRoleId;
-      if (updates.notes !== undefined) payload.notes = updates.notes.trim();
-      const updated = LocalStore.update('inventoryItems', id, payload, 'inventory_items');
-      return { ok: true, data: updated };
-    },
-
-    deleteInventoryItem: async (id) => {
-      LocalStore.remove('inventoryItems', id, 'inventory_items');
-      return { ok: true };
-    },
-
-    adjustInventoryStock: async (itemId, delta, note = '') => {
-      try {
-        const mov = LocalStore.adjustInventory(itemId, delta, note);
-        return { ok: true, currentStock: mov.newStock, data: mov.newStock };
-      } catch (err) {
-        return { ok: false, error: err.message };
-      }
-    },
-
-    getInventoryMovements: async (itemId, limit = 50) => {
-      let movs = [...(LocalStore.getCollection('inventoryMovements') || [])].reverse();
-      if (itemId) movs = movs.filter(m => m.itemId === itemId);
-      const profs = LocalStore.getCollection('profiles') || [];
-      const pMap = new Map(profs.map(p => [p.id, p]));
-      return movs.slice(0, limit).map(m => ({
-        id: m.id,
-        itemId: m.itemId,
-        delta: Number(m.delta),
-        occurredOn: (m.createdAt || nowISO()).split('T')[0],
-        note: m.reason || m.note || '',
-        authorName: pMap.get(m.actorId)?.fullName || 'Sistema',
-        createdAt: m.createdAt
-      }));
-    },
-
-    getInventoryCategories: async () => {
-      return (LocalStore.getCollection('inventoryCategories') || []).map(c => ({ id: c.id, name: c.name }));
-    },
-
-    addInventoryCategory: async (name) => {
-      const cat = { id: 'cat_' + LocalStore.uuid().slice(0, 8), name: name.trim() };
-      LocalStore.insert('inventoryCategories', cat);
-      return { ok: true, data: cat };
-    },
-
-    getTasksByDate: async (dateStr) => {
-      const targetDate = dateStr || todayStr();
-      const allTasks = LocalStore.getCollection('tasks') || [];
-      const tasks = allTasks.filter(t => t.taskDate === targetDate);
-      const roles = LocalStore.getCollection('careRoles') || [];
-      const profs = LocalStore.getCollection('profiles') || [];
-      const comments = LocalStore.getCollection('taskComments') || [];
-      const rMap = new Map(roles.map(r => [r.id, r]));
-      const pMap = new Map(profs.map(p => [p.id, p]));
-
-      return tasks.map(t => {
-        const r = rMap.get(t.assignedCareRoleId || t.careRoleId) || null;
-        const p = pMap.get(t.assignedProfileId || t.assignedProfile?.id) || null;
-        const taskComments = comments.filter(c => c.taskId === t.id);
-        return {
-          id: t.id,
-          templateId: t.templateId || null,
-          title: t.title,
-          description: t.description || '',
-          shift: t.shift || t.shiftType || 'morning',
-          shiftType: t.shift || t.shiftType || 'morning',
-          assignedCareRoleId: t.assignedCareRoleId || null,
-          assignedCareRole: r,
-          assignedRole: r,
-          assignedProfileId: t.assignedProfileId || null,
-          assignedProfile: p,
-          assignedPersonName: p?.fullName || '',
-          status: t.status || 'pending',
-          isEmergency: !!t.isEmergency,
-          taskDate: t.taskDate,
-          comments: taskComments.map(c => ({
-            id: c.id,
-            text: c.text,
-            authorName: pMap.get(c.authorId)?.fullName || 'Usuario',
-            createdAt: c.createdAt
-          }))
-        };
-      });
-    },
-
-    addTask: async (task) => {
-      const newTask = {
-        id: LocalStore.uuid(),
-        templateId: task.templateId || null,
-        title: task.title.trim(),
-        description: (task.description || '').trim(),
-        shift: task.shift || task.shiftType || 'morning',
-        shiftType: task.shift || task.shiftType || 'morning',
-        assignedCareRoleId: task.assignedCareRoleId || null,
-        assignedProfileId: task.assignedProfileId || null,
-        status: task.status || 'pending',
-        isEmergency: !!task.isEmergency,
-        taskDate: task.taskDate || todayStr(),
-        createdAt: nowISO()
-      };
-      LocalStore.insert('tasks', newTask, 'tasks');
-      return { ok: true, data: newTask };
-    },
-
-    updateTask: async (id, updates) => {
-      const payload = {};
-      if (updates.title !== undefined) payload.title = updates.title.trim();
-      if (updates.description !== undefined) payload.description = updates.description.trim();
-      if (updates.shift !== undefined || updates.shiftType !== undefined) {
-        const s = updates.shift || updates.shiftType;
-        payload.shift = s;
-        payload.shiftType = s;
-      }
-      if (updates.assignedCareRoleId !== undefined) payload.assignedCareRoleId = updates.assignedCareRoleId;
-      if (updates.assignedProfileId !== undefined) payload.assignedProfileId = updates.assignedProfileId;
-      if (updates.status !== undefined) payload.status = updates.status;
-      if (updates.isEmergency !== undefined) payload.isEmergency = !!updates.isEmergency;
-      if (updates.taskDate !== undefined) payload.taskDate = updates.taskDate;
-      const updated = LocalStore.update('tasks', id, payload, 'tasks');
-      return { ok: true, data: updated };
-    },
-
-    deleteTask: async (id) => {
-      LocalStore.remove('tasks', id, 'tasks');
-      return { ok: true };
-    },
-
-    cycleTaskStatus: async (id, currentStatus) => {
-      const flow = { 'pending': 'in-progress', 'in-progress': 'completed', 'completed': 'pending' };
-      const nextStatus = flow[currentStatus] || 'pending';
-      return LocalAdapter.updateTask(id, { status: nextStatus });
-    },
-
-    addTaskComment: async (taskId, text) => {
-      const user = Auth.getUser();
-      const c = {
-        id: LocalStore.uuid(),
-        taskId,
-        authorId: user?.id || null,
-        text: text.trim(),
-        createdAt: nowISO()
-      };
-      LocalStore.insert('taskComments', c, 'task_comments');
-      return { ok: true, data: c };
-    },
-
-    getTaskComments: async (taskId) => {
-      const comments = (LocalStore.getCollection('taskComments') || []).filter(c => c.taskId === taskId);
-      const profs = LocalStore.getCollection('profiles') || [];
-      const pMap = new Map(profs.map(p => [p.id, p]));
-      return comments.map(c => ({
-        id: c.id,
-        taskId: c.taskId,
-        text: c.text,
-        authorName: pMap.get(c.authorId)?.fullName || 'Usuario',
-        createdAt: c.createdAt
-      }));
-    },
-
-    getTaskTemplates: async () => {
-      const tmpls = LocalStore.getCollection('taskTemplates') || [];
-      const roles = LocalStore.getCollection('careRoles') || [];
-      const profs = LocalStore.getCollection('profiles') || [];
-      const rMap = new Map(roles.map(r => [r.id, r]));
-      const pMap = new Map(profs.map(p => [p.id, p]));
-      return tmpls.map(t => ({
-        id: t.id,
-        title: t.title,
-        description: t.description || '',
-        shift: t.shift || t.shiftType || 'morning',
-        shiftType: t.shift || t.shiftType || 'morning',
-        assignedCareRoleId: t.assignedCareRoleId || null,
-        assignedCareRole: rMap.get(t.assignedCareRoleId) || null,
-        assignedProfileId: t.assignedProfileId || null,
-        assignedProfile: pMap.get(t.assignedProfileId) || null,
-        isEmergency: !!t.isEmergency,
-        recurringDays: t.recurringDays || [1, 2, 3, 4, 5, 6, 7],
-        active: t.active !== false
-      }));
-    },
-
-    addTaskTemplate: async (tmpl) => {
-      const newTmpl = {
-        id: LocalStore.uuid(),
-        title: tmpl.title.trim(),
-        description: (tmpl.description || '').trim(),
-        shift: tmpl.shift || tmpl.shiftType || 'morning',
-        shiftType: tmpl.shift || tmpl.shiftType || 'morning',
-        assignedCareRoleId: tmpl.assignedCareRoleId || null,
-        assignedProfileId: tmpl.assignedProfileId || null,
-        isEmergency: !!tmpl.isEmergency,
-        recurringDays: tmpl.recurringDays || [1, 2, 3, 4, 5, 6, 7],
-        active: tmpl.active !== false,
-        createdAt: nowISO()
-      };
-      LocalStore.insert('taskTemplates', newTmpl, 'task_templates');
-      return { ok: true, data: newTmpl };
-    },
-
-    updateTaskTemplate: async (id, updates) => {
-      const payload = {};
-      if (updates.title !== undefined) payload.title = updates.title.trim();
-      if (updates.description !== undefined) payload.description = updates.description.trim();
-      if (updates.shift !== undefined || updates.shiftType !== undefined) {
-        const s = updates.shift || updates.shiftType;
-        payload.shift = s;
-        payload.shiftType = s;
-      }
-      if (updates.assignedCareRoleId !== undefined) payload.assignedCareRoleId = updates.assignedCareRoleId;
-      if (updates.assignedProfileId !== undefined) payload.assignedProfileId = updates.assignedProfileId;
-      if (updates.isEmergency !== undefined) payload.isEmergency = !!updates.isEmergency;
-      if (updates.recurringDays !== undefined) payload.recurringDays = updates.recurringDays;
-      if (updates.active !== undefined) payload.active = !!updates.active;
-      const updated = LocalStore.update('taskTemplates', id, payload, 'task_templates');
-      return { ok: true, data: updated };
-    },
-
-    deleteTaskTemplate: async (id) => {
-      LocalStore.remove('taskTemplates', id, 'task_templates');
-      return { ok: true };
-    },
-
-    getAppointments: async () => {
-      const appts = [...(LocalStore.getCollection('appointments') || [])];
-      appts.sort((a, b) => (a.apptDate + ' ' + (a.apptTime || '')).localeCompare(b.apptDate + ' ' + (b.apptTime || '')));
-      return appts.map(a => ({
-        id: a.id,
-        title: a.title,
-        specialty: a.specialty || '',
-        doctor: a.doctor || '',
-        apptDate: a.apptDate,
-        apptTime: a.apptTime ? a.apptTime.slice(0, 5) : '',
-        modality: a.modality || 'presencial',
-        location: a.location || '',
-        preparation: a.preparation || '',
-        status: a.status || 'upcoming',
-        notes: a.notes || '',
-        resultNotes: a.resultNotes || ''
-      }));
-    },
-
-    getUpcomingAppointments: async (days = null) => {
-      const today = todayStr();
-      const all = await LocalAdapter.getAppointments();
-      let upcoming = all.filter(a => a.status === 'upcoming' && a.apptDate >= today);
-      if (typeof days === 'number') {
-        const limitDate = new Date(Date.now() + days * 86400000).toISOString().split('T')[0];
-        upcoming = upcoming.filter(a => a.apptDate <= limitDate);
-      }
-      return upcoming;
-    },
-
-    getPastAppointments: async () => {
-      const today = todayStr();
-      const all = await LocalAdapter.getAppointments();
-      return all.filter(a => a.status === 'completed' || a.apptDate < today);
-    },
-
-    addAppointment: async (appt) => {
-      const newAppt = {
-        id: LocalStore.uuid(),
-        title: appt.title.trim(),
-        specialty: (appt.specialty || '').trim(),
-        doctor: (appt.doctor || '').trim(),
-        apptDate: appt.apptDate,
-        apptTime: appt.apptTime || null,
-        modality: appt.modality || 'presencial',
-        location: (appt.location || '').trim(),
-        preparation: (appt.preparation || '').trim(),
-        status: appt.status || 'upcoming',
-        notes: (appt.notes || '').trim(),
-        resultNotes: '',
-        createdAt: nowISO()
-      };
-      LocalStore.insert('appointments', newAppt, 'appointments');
-      return { ok: true, data: newAppt };
-    },
-
-    updateAppointment: async (id, updates) => {
-      const payload = {};
-      if (updates.title !== undefined) payload.title = updates.title.trim();
-      if (updates.specialty !== undefined) payload.specialty = updates.specialty.trim();
-      if (updates.doctor !== undefined) payload.doctor = updates.doctor.trim();
-      if (updates.apptDate !== undefined) payload.apptDate = updates.apptDate;
-      if (updates.apptTime !== undefined) payload.apptTime = updates.apptTime || null;
-      if (updates.modality !== undefined) payload.modality = updates.modality;
-      if (updates.location !== undefined) payload.location = updates.location.trim();
-      if (updates.preparation !== undefined) payload.preparation = updates.preparation.trim();
-      if (updates.status !== undefined) payload.status = updates.status;
-      if (updates.notes !== undefined) payload.notes = updates.notes.trim();
-      if (updates.resultNotes !== undefined) payload.resultNotes = updates.resultNotes.trim();
-      const updated = LocalStore.update('appointments', id, payload, 'appointments');
-      return { ok: true, data: updated };
-    },
-
-    deleteAppointment: async (id) => {
-      LocalStore.remove('appointments', id, 'appointments');
       return { ok: true };
     },
 
@@ -1415,62 +844,6 @@ const Api = (() => {
       return { ok: true, count: items.length };
     },
 
-    getExpenses: async ({ page = 0, pageSize = 50 } = {}) => {
-      const all = [...(LocalStore.getCollection('expenses') || [])];
-      all.sort((a, b) => b.expenseDate.localeCompare(a.expenseDate) || b.createdAt.localeCompare(a.createdAt));
-      const profs = LocalStore.getCollection('profiles') || [];
-      const pMap = new Map(profs.map(p => [p.id, p]));
-      const from = page * pageSize;
-      const slice = all.slice(from, from + pageSize);
-      return {
-        expenses: slice.map(e => ({
-          id: e.id,
-          expenseDate: e.expenseDate,
-          amount: Number(e.amount),
-          category: e.category,
-          description: e.description || '',
-          linkedRestockId: e.linkedRestockId || null,
-          managedByName: pMap.get(e.managedBy)?.fullName || 'Sistema',
-          createdAt: e.createdAt
-        })),
-        totalCount: all.length
-      };
-    },
-
-    getExpensesThisMonth: async () => {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const all = LocalStore.getCollection('expenses') || [];
-      const thisMonth = all.filter(e => e.expenseDate >= firstDay);
-      const total = thisMonth.reduce((sum, e) => sum + Number(e.amount || 0), 0);
-      return { total, count: thisMonth.length };
-    },
-
-    getExpenseTotal: (expenses) => {
-      return (expenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
-    },
-
-    addExpense: async ({ description, amount, date, category = 'Otros', linkedRestockId = null }) => {
-      const user = Auth.getUser();
-      const exp = {
-        id: LocalStore.uuid(),
-        description: description.trim(),
-        amount: Number(amount),
-        expenseDate: date || todayStr(),
-        category: category || 'Otros',
-        linkedRestockId,
-        managedBy: user?.id || null,
-        createdAt: nowISO()
-      };
-      LocalStore.insert('expenses', exp, 'expenses');
-      return { ok: true, data: exp };
-    },
-
-    deleteExpense: async (id) => {
-      LocalStore.remove('expenses', id, 'expenses');
-      return { ok: true };
-    },
-
     getAuditLog: async ({ tableName, actorId, fromDate, toDate, page = 0, pageSize = 50 } = {}) => {
       let list = [...(LocalStore.getCollection('auditLog') || [])];
       if (tableName) list = list.filter(a => a.tableName === tableName);
@@ -1503,82 +876,14 @@ const Api = (() => {
       return { ok: true, deletedCount: count };
     },
 
-    getActiveAlerts: async () => {
-      const alerts = [];
-      const today = todayStr();
-      const nowTime = new Date().toTimeString().slice(0, 5); // "HH:MM"
+    // El control de insumos solo existe en Supabase: en modo local no hay alertas derivadas.
+    getActiveAlerts: async () => [],
 
-      try {
-        const [meds, admins] = await Promise.all([
-          LocalAdapter.getMedications(),
-          LocalAdapter.getTodayAdministrations()
-        ]);
-
-        meds.filter(m => m.status === 'active').forEach(m => {
-          (m.schedules || []).filter(s => s.active).forEach(s => {
-            const administered = admins.some(a => a.scheduleId === s.id && a.scheduledDate === today);
-            if (!administered && s.timeOfDay < nowTime) {
-              alerts.push({
-                id: `dose_late_${s.id}`,
-                type: 'critical',
-                title: 'Dosis atrasada',
-                message: `${m.name} (${s.dose} ${m.unit}) tocaba a las ${s.timeOfDay}`,
-                module: 'administration'
-              });
-            }
-          });
-        });
-
-        meds.filter(m => m.status === 'active').forEach(m => {
-          if (m.needsRestock || (m.daysRemaining !== null && m.daysRemaining <= 3)) {
-            alerts.push({
-              id: `med_stock_${m.id}`,
-              type: m.currentStock === 0 ? 'critical' : 'alert',
-              title: 'Medicamento por agotarse',
-              message: `${m.name}: quedan ${m.currentStock} ${m.unit} (${m.daysRemaining != null ? m.daysRemaining + ' días' : 'reposición urgente'})`,
-              module: 'medications'
-            });
-          }
-        });
-
-        const inventory = await LocalAdapter.getInventory();
-        inventory.forEach(item => {
-          if (item.isLow) {
-            alerts.push({
-              id: `inv_low_${item.id}`,
-              type: item.currentStock === 0 ? 'critical' : 'alert',
-              title: 'Insumo bajo mínimo',
-              message: `${item.name}: ${item.currentStock} ${item.unit} (mínimo: ${item.minThreshold})`,
-              module: 'inventory'
-            });
-          }
-        });
-
-        const appointments = await LocalAdapter.getUpcomingAppointments(2);
-        appointments.forEach(a => {
-          alerts.push({
-            id: `appt_soon_${a.id}`,
-            type: a.apptDate === today ? 'critical' : 'alert',
-            title: a.apptDate === today ? 'Cita médica HOY' : 'Cita médica próxima',
-            message: `${a.title} con ${a.doctor || a.specialty || 'médico'} (${formatDate(a.apptDate)} ${a.apptTime || ''})`,
-            module: 'agenda'
-          });
-        });
-      } catch (e) {
-        console.warn('Error al derivar alertas activas en local:', e);
-      }
-
-      return alerts;
-    },
-
-    getTasksForDate: async (dateStr) => LocalAdapter.getTasksByDate(dateStr),
     getShoppingItems: async () => LocalAdapter.getShoppingList(),
     addShoppingItemsBatch: async (items) => LocalAdapter.addBulkShoppingItems(items),
     archiveCompletedShopping: async () => LocalAdapter.clearCheckedShoppingItems(),
     setWeeklySlot: async (d, m, ids, weekKey, dateStr) => LocalAdapter.setMealInPlan(d, m, ids, weekKey, dateStr),
     updatePatientStatus: async (st, n) => LocalAdapter.savePatientStatus(st, n),
-    adjustInventory: async (id, delta, n) => LocalAdapter.adjustInventoryStock(id, delta, n),
-    getMedicationRestocks: async (medId) => LocalAdapter.getRestockHistory(medId),
     markShiftNotesRead: async (ids) => LocalAdapter.markShiftNoteRead(ids),
 
     exportAllData: async () => {
@@ -1595,19 +900,10 @@ const Api = (() => {
         profiles: await LocalAdapter.getProfiles(),
         shifts: await LocalAdapter.getShiftHistory(200),
         shiftNotes: await LocalAdapter.getShiftNotes(),
-        medications: await LocalAdapter.getMedications(),
-        restocks: await LocalAdapter.getRestockHistory(),
-        administrations: await LocalAdapter.getAdministrationHistory({ limit: 500 }),
-        inventory: await LocalAdapter.getInventory(),
-        movements: await LocalAdapter.getInventoryMovements(null, 500),
-        tasks: LocalStore.getCollection('tasks') || [],
-        taskTemplates: await LocalAdapter.getTaskTemplates(),
-        appointments: await LocalAdapter.getAppointments(),
         recipes: await LocalAdapter.getRecipes(),
         weeklyPlan: await LocalAdapter.getWeeklyPlan(),
         complementos: await LocalAdapter.getComplementos(),
-        shopping: await LocalAdapter.getShoppingList(),
-        expenses: (await LocalAdapter.getExpenses({ pageSize: 1000 })).expenses
+        shopping: await LocalAdapter.getShoppingList()
       };
       return JSON.stringify(backup, null, 2);
     }
@@ -1617,9 +913,6 @@ const Api = (() => {
   const bootstrap = async () => {
     if (isLocal()) return wrap(await LocalAdapter.bootstrap());
     try {
-      // Generar tareas recurrentes del día (RF-64, idempotente)
-      await db().rpc('generate_recurring_tasks').catch(e => console.warn('Error al generar tareas:', e));
-
       // Precargar referencias
       await Promise.all([
         getSettings(true),
@@ -1920,574 +1213,6 @@ const Api = (() => {
       .update({ read_at: nowISO() })
       .is('read_at', null);
 
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true };
-  };
-
-  // ─── 5. Medicamentos y Reposiciones ───────────────────────
-  const getMedications = async () => {
-    // RNF-43: lectura compuesta con relación anidada
-    const { data, error } = await db()
-      .from('medications_view')
-      .select('*, medication_schedules(*)')
-      .order('name');
-
-    if (error) throw new Error(traducirError(error));
-    return data.map(m => ({
-      id: m.id,
-      name: m.name,
-      prescriber: m.prescriber || '',
-      indication: m.indication || '',
-      startDate: m.start_date,
-      status: m.status,
-      notes: m.notes || '',
-      needsRestock: !!m.needs_restock,
-      unit: m.unit || 'unidad',
-      currentStock: Number(m.current_stock || 0),
-      manualDailyAmount: m.manual_daily_amount != null ? Number(m.manual_daily_amount) : null,
-      dailyAmount: Number(m.daily_amount || 0),
-      daysRemaining: m.days_remaining != null ? Number(m.days_remaining) : null,
-      schedules: (m.medication_schedules || []).map(s => ({
-        id: s.id,
-        medicationId: s.medication_id,
-        timeOfDay: s.time_of_day.slice(0, 5),
-        dose: Number(s.dose),
-        active: s.active
-      }))
-    }));
-  };
-
-  const addMedication = async (med) => {
-    const payload = {
-      name: med.name.trim(),
-      prescriber: (med.prescriber || '').trim(),
-      indication: (med.indication || '').trim(),
-      start_date: med.startDate || todayStr(),
-      status: med.status || 'active',
-      notes: (med.notes || '').trim(),
-      unit: med.unit || 'unidad',
-      current_stock: Math.max(0, Number(med.currentStock || 0)),
-      manual_daily_amount: med.manualDailyAmount != null ? Number(med.manualDailyAmount) : null
-    };
-    const { data, error } = await db().from('medications').insert(payload).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const updateMedication = async (id, updates) => {
-    const payload = {};
-    if (updates.name !== undefined) payload.name = updates.name.trim();
-    if (updates.prescriber !== undefined) payload.prescriber = updates.prescriber.trim();
-    if (updates.indication !== undefined) payload.indication = updates.indication.trim();
-    if (updates.startDate !== undefined) payload.start_date = updates.startDate;
-    if (updates.status !== undefined) payload.status = updates.status;
-    if (updates.notes !== undefined) payload.notes = updates.notes.trim();
-    if (updates.unit !== undefined) payload.unit = updates.unit;
-    if (updates.currentStock !== undefined) payload.current_stock = Math.max(0, Number(updates.currentStock));
-    if (updates.manualDailyAmount !== undefined) payload.manual_daily_amount = updates.manualDailyAmount != null ? Number(updates.manualDailyAmount) : null;
-    if (updates.needsRestock !== undefined) payload.needs_restock = !!updates.needsRestock;
-
-    const { data, error } = await db().from('medications').update(payload).eq('id', id).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const deleteMedication = async (id) => {
-    const { error } = await db().from('medications').delete().eq('id', id);
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true };
-  };
-
-  const addMedicationSchedule = async ({ medicationId, timeOfDay, dose }) => {
-    const { data, error } = await db()
-      .from('medication_schedules')
-      .insert({
-        medication_id: medicationId,
-        time_of_day: timeOfDay,
-        dose: Number(dose),
-        active: true
-      })
-      .select()
-      .single();
-
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const updateMedicationSchedule = async (id, updates) => {
-    const payload = {};
-    if (updates.timeOfDay !== undefined) payload.time_of_day = updates.timeOfDay;
-    if (updates.dose !== undefined) payload.dose = Number(updates.dose);
-    if (updates.active !== undefined) payload.active = !!updates.active;
-
-    const { data, error } = await db()
-      .from('medication_schedules')
-      .update(payload)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const deleteMedicationSchedule = async (id) => {
-    const { error } = await db().from('medication_schedules').delete().eq('id', id);
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true };
-  };
-
-  const recordRestock = async ({ medicationId, quantity, establishment = '', cost = 0 }) => {
-    const { data, error } = await db().rpc('record_restock', {
-      p_medication_id: medicationId,
-      p_quantity: Number(quantity),
-      p_establishment: establishment,
-      p_cost: Number(cost || 0)
-    });
-
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, restockId: data };
-  };
-
-  const getRestockHistory = async (medicationId) => {
-    let query = db()
-      .from('medication_restocks')
-      .select('*, profiles(full_name), medications(name)')
-      .order('created_at', { ascending: false });
-
-    if (medicationId) query = query.eq('medication_id', medicationId);
-    const { data, error } = await query;
-    if (error) throw new Error(traducirError(error));
-    return data.map(r => ({
-      id: r.id,
-      medicationId: r.medication_id,
-      medicationName: r.medications?.name,
-      quantity: Number(r.quantity),
-      establishment: r.establishment,
-      cost: Number(r.cost),
-      managedByName: r.profiles?.full_name || 'Sistema',
-      createdAt: r.created_at
-    }));
-  };
-
-  // ─── 6. Administración de Dosis (RF-39 .. RF-48) ──────────
-  const getTodayAdministrations = async () => {
-    const today = todayStr();
-    const { data, error } = await db()
-      .from('medication_administrations')
-      .select('*, profiles(full_name)')
-      .eq('scheduled_date', today);
-
-    if (error) throw new Error(traducirError(error));
-    return data.map(a => ({
-      id: a.id,
-      medicationId: a.medication_id,
-      scheduleId: a.schedule_id,
-      scheduledDate: a.scheduled_date,
-      scheduledTime: a.scheduled_time ? a.scheduled_time.slice(0, 5) : null,
-      administeredAt: a.administered_at,
-      administeredByName: a.profiles?.full_name || 'Cuidador',
-      status: a.status, // 'given' | 'skipped' | 'refused'
-      dose: Number(a.dose),
-      notes: a.notes || ''
-    }));
-  };
-
-  const recordAdministration = async ({
-    medicationId, scheduleId, scheduledDate, scheduledTime, status, dose, notes = ''
-  }) => {
-    const { data, error } = await db().rpc('record_administration', {
-      p_medication_id: medicationId,
-      p_schedule_id: scheduleId || null,
-      p_scheduled_date: scheduledDate || todayStr(),
-      p_scheduled_time: scheduledTime || null,
-      p_status: status,
-      p_dose: Number(dose || 0),
-      p_notes: notes
-    });
-
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, adminId: data };
-  };
-
-  const undoAdministration = async (id) => {
-    const { error } = await db().rpc('undo_administration', { p_id: id });
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true };
-  };
-
-  const getAdministrationHistory = async ({ medicationId, fromDate, toDate, limit = 100 } = {}) => {
-    let query = db()
-      .from('medication_administrations')
-      .select('*, profiles(full_name), medications(name, unit)')
-      .order('scheduled_date', { ascending: false })
-      .order('scheduled_time', { ascending: false })
-      .limit(limit);
-
-    if (medicationId) query = query.eq('medication_id', medicationId);
-    if (fromDate) query = query.gte('scheduled_date', fromDate);
-    if (toDate) query = query.lte('scheduled_date', toDate);
-
-    const { data, error } = await query;
-    if (error) throw new Error(traducirError(error));
-    return data.map(a => ({
-      id: a.id,
-      medicationId: a.medication_id,
-      medicationName: a.medications?.name,
-      unit: a.medications?.unit || 'unidad',
-      scheduledDate: a.scheduled_date,
-      scheduledTime: a.scheduled_time ? a.scheduled_time.slice(0, 5) : null,
-      administeredAt: a.administered_at,
-      administeredByName: a.profiles?.full_name || 'Cuidador',
-      status: a.status,
-      dose: Number(a.dose),
-      notes: a.notes || ''
-    }));
-  };
-
-  // ─── 7. Inventario (RF-49 .. RF-57) ───────────────────────
-  const getInventory = async () => {
-    // Lectura de vista con cálculo correcto de consumo (RF-54, RF-55)
-    const { data, error } = await db()
-      .from('inventory_items_view')
-      .select('*, care_roles(id, name, icon, color)')
-      .order('name');
-
-    if (error) throw new Error(traducirError(error));
-    return data.map(i => ({
-      id: i.id,
-      name: i.name,
-      categoryId: i.category_id,
-      categoryName: i.category_name || 'Otros',
-      currentStock: Number(i.current_stock || 0),
-      unit: i.unit || 'unidad',
-      minThreshold: Number(i.min_threshold || 0),
-      responsibleCareRoleId: i.responsible_care_role_id,
-      responsibleRole: i.care_roles ? {
-        id: i.care_roles.id,
-        name: i.care_roles.name,
-        icon: i.care_roles.icon,
-        color: i.care_roles.color
-      } : null,
-      notes: i.notes || '',
-      avgDailyConsumption: i.avg_daily_consumption != null ? Number(i.avg_daily_consumption) : null,
-      daysRemaining: i.days_remaining != null ? Number(i.days_remaining) : null,
-      isLow: !!i.is_low
-    }));
-  };
-
-  const addInventoryItem = async (item) => {
-    const payload = {
-      name: item.name.trim(),
-      category_id: item.categoryId || null,
-      current_stock: Math.max(0, Number(item.currentStock || 0)),
-      unit: item.unit || 'unidad',
-      min_threshold: Math.max(0, Number(item.minThreshold || 0)),
-      responsible_care_role_id: item.responsibleCareRoleId || null,
-      notes: (item.notes || '').trim()
-    };
-    const { data, error } = await db().from('inventory_items').insert(payload).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const updateInventoryItem = async (id, updates) => {
-    const payload = {};
-    if (updates.name !== undefined) payload.name = updates.name.trim();
-    if (updates.categoryId !== undefined) payload.category_id = updates.categoryId;
-    if (updates.currentStock !== undefined) payload.current_stock = Math.max(0, Number(updates.currentStock));
-    if (updates.unit !== undefined) payload.unit = updates.unit;
-    if (updates.minThreshold !== undefined) payload.min_threshold = Math.max(0, Number(updates.minThreshold));
-    if (updates.responsibleCareRoleId !== undefined) payload.responsible_care_role_id = updates.responsibleCareRoleId;
-    if (updates.notes !== undefined) payload.notes = updates.notes.trim();
-
-    const { data, error } = await db().from('inventory_items').update(payload).eq('id', id).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const deleteInventoryItem = async (id) => {
-    const { error } = await db().from('inventory_items').delete().eq('id', id);
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true };
-  };
-
-  const adjustInventoryStock = async (itemId, delta, note = '') => {
-    const { data, error } = await db().rpc('adjust_inventory', {
-      p_item_id: itemId,
-      p_delta: Number(delta),
-      p_note: note
-    });
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, currentStock: data };
-  };
-
-  const getInventoryMovements = async (itemId, limit = 50) => {
-    let query = db()
-      .from('inventory_movements')
-      .select('*, profiles(full_name)')
-      .order('occurred_on', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (itemId) query = query.eq('item_id', itemId);
-    const { data, error } = await query;
-    if (error) throw new Error(traducirError(error));
-    return data.map(m => ({
-      id: m.id,
-      itemId: m.item_id,
-      delta: Number(m.delta),
-      occurredOn: m.occurred_on,
-      note: m.note || '',
-      authorName: m.profiles?.full_name || 'Sistema',
-      createdAt: m.created_at
-    }));
-  };
-
-  const getInventoryCategories = async () => {
-    const { data, error } = await db().from('inventory_categories').select('*').order('name');
-    if (error) throw new Error(traducirError(error));
-    return data.map(c => ({ id: c.id, name: c.name }));
-  };
-
-  const addInventoryCategory = async (name) => {
-    const { data, error } = await db()
-      .from('inventory_categories')
-      .insert({ name: name.trim() })
-      .select()
-      .single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  // ─── 8. Tareas y Plantillas (RF-58 .. RF-66) ───────────────
-  const getTasksByDate = async (dateStr) => {
-    const targetDate = dateStr || todayStr();
-    const { data, error } = await db()
-      .from('tasks')
-      .select('*, care_roles(id, name, icon, color), profiles(id, full_name), task_comments(*, profiles(full_name))')
-      .eq('task_date', targetDate)
-      .order('is_emergency', { ascending: false })
-      .order('created_at');
-
-    if (error) throw new Error(traducirError(error));
-    return data.map(t => ({
-      id: t.id,
-      templateId: t.template_id,
-      title: t.title,
-      description: t.description || '',
-      shift: t.shift, // 'morning' | 'afternoon' | 'night' | 'any'
-      assignedCareRoleId: t.assigned_care_role_id,
-      assignedRole: t.care_roles ? {
-        id: t.care_roles.id,
-        name: t.care_roles.name,
-        icon: t.care_roles.icon,
-        color: t.care_roles.color
-      } : null,
-      assignedProfileId: t.assigned_profile_id,
-      assignedPersonName: t.profiles?.full_name || '',
-      status: t.status, // 'pending' | 'in-progress' | 'completed'
-      isEmergency: !!t.is_emergency,
-      taskDate: t.task_date,
-      comments: (t.task_comments || []).map(c => ({
-        id: c.id,
-        text: c.text,
-        authorName: c.profiles?.full_name || 'Usuario',
-        createdAt: c.created_at
-      }))
-    }));
-  };
-
-  const getTodayTasks = () => getTasksByDate(todayStr());
-
-  const addTask = async (task) => {
-    const payload = {
-      title: task.title.trim(),
-      description: (task.description || '').trim(),
-      shift: task.shift || 'morning',
-      assigned_care_role_id: task.assignedCareRoleId || null,
-      assigned_profile_id: task.assignedProfileId || null,
-      status: task.status || 'pending',
-      is_emergency: !!task.isEmergency,
-      task_date: task.taskDate || todayStr()
-    };
-    const { data, error } = await db().from('tasks').insert(payload).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const updateTask = async (id, updates) => {
-    const payload = {};
-    if (updates.title !== undefined) payload.title = updates.title.trim();
-    if (updates.description !== undefined) payload.description = updates.description.trim();
-    if (updates.shift !== undefined) payload.shift = updates.shift;
-    if (updates.assignedCareRoleId !== undefined) payload.assigned_care_role_id = updates.assignedCareRoleId;
-    if (updates.assignedProfileId !== undefined) payload.assigned_profile_id = updates.assignedProfileId;
-    if (updates.status !== undefined) payload.status = updates.status;
-    if (updates.isEmergency !== undefined) payload.is_emergency = !!updates.isEmergency;
-    if (updates.taskDate !== undefined) payload.task_date = updates.taskDate;
-
-    const { data, error } = await db().from('tasks').update(payload).eq('id', id).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const deleteTask = async (id) => {
-    const { error } = await db().from('tasks').delete().eq('id', id);
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true };
-  };
-
-  const cycleTaskStatus = async (id, currentStatus) => {
-    const flow = { 'pending': 'in-progress', 'in-progress': 'completed', 'completed': 'pending' };
-    const nextStatus = flow[currentStatus] || 'pending';
-    return await updateTask(id, { status: nextStatus });
-  };
-
-  const addTaskComment = async (taskId, text) => {
-    const { data, error } = await db()
-      .from('task_comments')
-      .insert({
-        task_id: taskId,
-        author_id: Auth.getUser()?.id || null,
-        text: text.trim()
-      })
-      .select()
-      .single();
-
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const getTaskTemplates = async () => {
-    const { data, error } = await db()
-      .from('task_templates')
-      .select('*, care_roles(*), profiles(*)')
-      .order('title');
-
-    if (error) throw new Error(traducirError(error));
-    return data.map(t => ({
-      id: t.id,
-      title: t.title,
-      description: t.description || '',
-      shift: t.shift,
-      assignedCareRoleId: t.assigned_care_role_id,
-      assignedProfileId: t.assigned_profile_id,
-      isEmergency: !!t.is_emergency,
-      recurringDays: t.recurring_days || [],
-      active: t.active
-    }));
-  };
-
-  const addTaskTemplate = async (tmpl) => {
-    const payload = {
-      title: tmpl.title.trim(),
-      description: (tmpl.description || '').trim(),
-      shift: tmpl.shift || 'morning',
-      assigned_care_role_id: tmpl.assignedCareRoleId || null,
-      assigned_profile_id: tmpl.assignedProfileId || null,
-      is_emergency: !!tmpl.isEmergency,
-      recurring_days: tmpl.recurringDays || [],
-      active: tmpl.active !== false
-    };
-    const { data, error } = await db().from('task_templates').insert(payload).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const updateTaskTemplate = async (id, updates) => {
-    const payload = {};
-    if (updates.title !== undefined) payload.title = updates.title.trim();
-    if (updates.description !== undefined) payload.description = updates.description.trim();
-    if (updates.shift !== undefined) payload.shift = updates.shift;
-    if (updates.assignedCareRoleId !== undefined) payload.assigned_care_role_id = updates.assignedCareRoleId;
-    if (updates.assignedProfileId !== undefined) payload.assigned_profile_id = updates.assignedProfileId;
-    if (updates.isEmergency !== undefined) payload.is_emergency = !!updates.isEmergency;
-    if (updates.recurringDays !== undefined) payload.recurring_days = updates.recurringDays;
-    if (updates.active !== undefined) payload.active = !!updates.active;
-
-    const { data, error } = await db().from('task_templates').update(payload).eq('id', id).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const deleteTaskTemplate = async (id) => {
-    const { error } = await db().from('task_templates').delete().eq('id', id);
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true };
-  };
-
-  // ─── 9. Agenda Médica (RF-67 .. RF-71) ────────────────────
-  const getAppointments = async () => {
-    const { data, error } = await db().from('appointments').select('*').order('appt_date').order('appt_time');
-    if (error) throw new Error(traducirError(error));
-    return data.map(a => ({
-      id: a.id,
-      title: a.title,
-      specialty: a.specialty || '',
-      doctor: a.doctor || '',
-      apptDate: a.appt_date,
-      apptTime: a.appt_time ? a.appt_time.slice(0, 5) : '',
-      modality: a.modality || 'presencial',
-      location: a.location || '',
-      preparation: a.preparation || '',
-      status: a.status, // 'upcoming' | 'completed' | 'cancelled'
-      notes: a.notes || '',
-      resultNotes: a.result_notes || ''
-    }));
-  };
-
-  const getUpcomingAppointments = async () => {
-    const today = todayStr();
-    const all = await getAppointments();
-    return all.filter(a => a.status === 'upcoming' && a.apptDate >= today);
-  };
-
-  const getPastAppointments = async () => {
-    const today = todayStr();
-    const all = await getAppointments();
-    return all.filter(a => a.status === 'completed' || a.apptDate < today);
-  };
-
-  const addAppointment = async (appt) => {
-    const payload = {
-      title: appt.title.trim(),
-      specialty: (appt.specialty || '').trim(),
-      doctor: (appt.doctor || '').trim(),
-      appt_date: appt.apptDate,
-      appt_time: appt.apptTime || null,
-      modality: appt.modality || 'presencial',
-      location: (appt.location || '').trim(),
-      preparation: (appt.preparation || '').trim(),
-      status: appt.status || 'upcoming',
-      notes: (appt.notes || '').trim()
-    };
-    const { data, error } = await db().from('appointments').insert(payload).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const updateAppointment = async (id, updates) => {
-    const payload = {};
-    if (updates.title !== undefined) payload.title = updates.title.trim();
-    if (updates.specialty !== undefined) payload.specialty = updates.specialty.trim();
-    if (updates.doctor !== undefined) payload.doctor = updates.doctor.trim();
-    if (updates.apptDate !== undefined) payload.appt_date = updates.apptDate;
-    if (updates.apptTime !== undefined) payload.appt_time = updates.apptTime || null;
-    if (updates.modality !== undefined) payload.modality = updates.modality;
-    if (updates.location !== undefined) payload.location = updates.location.trim();
-    if (updates.preparation !== undefined) payload.preparation = updates.preparation.trim();
-    if (updates.status !== undefined) payload.status = updates.status;
-    if (updates.notes !== undefined) payload.notes = updates.notes.trim();
-    if (updates.resultNotes !== undefined) payload.result_notes = updates.resultNotes.trim();
-
-    const { data, error } = await db().from('appointments').update(payload).eq('id', id).select().single();
-    if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
-  };
-
-  const deleteAppointment = async (id) => {
-    const { error } = await db().from('appointments').delete().eq('id', id);
     if (error) return { ok: false, error: traducirError(error) };
     return { ok: true };
   };
@@ -2815,64 +1540,130 @@ const Api = (() => {
     return { ok: true, count: rows.length };
   };
 
-  // ─── 12. Gastos (expenses) ────────────────────────────────
-  const getExpenses = async ({ page = 0, pageSize = 50 } = {}) => {
-    const from = page * pageSize;
-    const to = from + pageSize - 1;
-    const { data, count, error } = await db()
-      .from('expenses')
-      .select('*, profiles(full_name)', { count: 'exact' })
-      .order('expense_date', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(from, to);
+  // ─── 12. Control de Insumos (stock_items / stock_checks) ──
+  // Solo existe en Supabase y solo lo opera un admin (RLS en 07_control_insumos.sql).
+  const STOCK_CATEGORIES = [
+    { id: 'medicamento',       label: 'Medicamento',          icon: '💊' },
+    { id: 'insumo_medico',     label: 'Insumo médico',        icon: '🩺' },
+    { id: 'material_curacion', label: 'Material de curación', icon: '🩹' },
+    { id: 'higiene',           label: 'Higiene',              icon: '🧴' },
+    { id: 'nutricion',         label: 'Nutrición/Suplementos', icon: '🥤' },
+    { id: 'otro',              label: 'Otro',                 icon: '📦' }
+  ];
 
-    if (error) throw new Error(traducirError(error));
-    return {
-      expenses: data.map(e => ({
-        id: e.id,
-        expenseDate: e.expense_date,
-        amount: Number(e.amount),
-        category: e.category,
-        description: e.description || '',
-        linkedRestockId: e.linked_restock_id,
-        managedByName: e.profiles?.full_name || 'Sistema',
-        createdAt: e.created_at
-      })),
-      totalCount: count || 0
-    };
+  // Nivel de prioridad → horas entre revisiones
+  const STOCK_PRIORITIES = {
+    1: { label: 'Nivel 1 · Crítico', hours: 24 },
+    2: { label: 'Nivel 2',           hours: 48 },
+    3: { label: 'Nivel 3',           hours: 72 }
   };
 
-  const getExpensesThisMonth = async () => {
-    const now = new Date();
-    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+  const LOCAL_STOCK_ERROR = 'El control de insumos requiere conexión con Supabase.';
+
+  /**
+   * Estado derivado de un insumo en un instante dado:
+   * revisión (vencida o no, próxima fecha) y stock (faltante frente al objetivo).
+   */
+  const stockItemStatus = (item, now = new Date()) => {
+    const hours = STOCK_PRIORITIES[item.priority]?.hours || 24;
+    const last = item.lastCheckedAt ? new Date(item.lastCheckedAt) : null;
+    const nextCheckAt = last ? new Date(last.getTime() + hours * 3600000) : null;
+    const checkDue = !nextCheckAt || now >= nextCheckAt;
+    const counted = item.currentStock !== null && item.currentStock !== undefined;
+    const missing = counted ? Math.max(item.targetStock - item.currentStock, 0) : null;
+    let stockState = 'unknown';
+    if (counted) {
+      if (item.currentStock <= 0) stockState = 'empty';
+      else if (item.currentStock < item.targetStock) stockState = 'low';
+      else stockState = 'ok';
+    }
+    return { hours, nextCheckAt, checkDue, missing, stockState };
+  };
+
+  const mapStockItem = (r) => ({
+    id: r.id,
+    name: r.name,
+    category: r.category,
+    targetStock: Number(r.target_stock),
+    priority: Number(r.priority),
+    currentStock: r.current_stock === null ? null : Number(r.current_stock),
+    lastCheckedAt: r.last_checked_at,
+    createdAt: r.created_at
+  });
+
+  const getStockItems = async () => {
+    if (isLocal()) return { ok: false, error: LOCAL_STOCK_ERROR };
     const { data, error } = await db()
-      .from('expenses')
-      .select('amount')
-      .gte('expense_date', firstDay);
-
-    if (error) throw new Error(traducirError(error));
-    const total = data.reduce((sum, e) => sum + Number(e.amount), 0);
-    return { total, count: data.length };
-  };
-
-  const addExpense = async ({ description, amount, date, category = 'Otros', linkedRestockId = null }) => {
-    const payload = {
-      description: description.trim(),
-      amount: Number(amount),
-      expense_date: date || todayStr(),
-      category: category || 'Otros',
-      linked_restock_id: linkedRestockId,
-      managed_by: Auth.getUser()?.id || null
-    };
-    const { data, error } = await db().from('expenses').insert(payload).select().single();
+      .from('stock_items')
+      .select('*')
+      .order('priority')
+      .order('name');
     if (error) return { ok: false, error: traducirError(error) };
-    return { ok: true, data };
+    return { ok: true, data: data.map(mapStockItem) };
   };
 
-  const deleteExpense = async (id) => {
-    const { error } = await db().from('expenses').delete().eq('id', id);
+  const addStockItem = async ({ name, category, targetStock, priority }) => {
+    if (isLocal()) return { ok: false, error: LOCAL_STOCK_ERROR };
+    Auth.requireAdmin();
+    const { data, error } = await db()
+      .from('stock_items')
+      .insert({ name: name.trim(), category, target_stock: targetStock, priority })
+      .select()
+      .single();
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true, data: mapStockItem(data) };
+  };
+
+  const updateStockItem = async (id, { name, category, targetStock, priority }) => {
+    if (isLocal()) return { ok: false, error: LOCAL_STOCK_ERROR };
+    Auth.requireAdmin();
+    const payload = {};
+    if (name !== undefined) payload.name = name.trim();
+    if (category !== undefined) payload.category = category;
+    if (targetStock !== undefined) payload.target_stock = targetStock;
+    if (priority !== undefined) payload.priority = priority;
+    const { error } = await db().from('stock_items').update(payload).eq('id', id);
     if (error) return { ok: false, error: traducirError(error) };
     return { ok: true };
+  };
+
+  const deleteStockItem = async (id) => {
+    if (isLocal()) return { ok: false, error: LOCAL_STOCK_ERROR };
+    Auth.requireAdmin();
+    const { error } = await db().from('stock_items').delete().eq('id', id);
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  // El trigger stock_checks_apply guarda el stock anterior y actualiza el insumo.
+  const recordStockCheck = async (itemId, quantity) => {
+    if (isLocal()) return { ok: false, error: LOCAL_STOCK_ERROR };
+    Auth.requireAdmin();
+    const { error } = await db().from('stock_checks').insert({ item_id: itemId, quantity });
+    if (error) return { ok: false, error: traducirError(error) };
+    return { ok: true };
+  };
+
+  const getStockChecks = async (itemId, limit = 30) => {
+    if (isLocal()) return { ok: false, error: LOCAL_STOCK_ERROR };
+    const { data, error } = await db()
+      .from('stock_checks')
+      .select('*, profiles(full_name)')
+      .eq('item_id', itemId)
+      .order('checked_at', { ascending: false })
+      .limit(limit);
+    if (error) return { ok: false, error: traducirError(error) };
+    return {
+      ok: true,
+      data: data.map(c => ({
+        id: c.id,
+        itemId: c.item_id,
+        quantity: Number(c.quantity),
+        previousQuantity: c.previous_quantity === null ? null : Number(c.previous_quantity),
+        checkedAt: c.checked_at,
+        checkedByName: c.profiles?.full_name || 'Administrador'
+      }))
+    };
   };
 
   // ─── 13. Auditoría (audit_log, solo admin) ────────────────
@@ -2920,74 +1711,36 @@ const Api = (() => {
   };
 
   // ─── 14. Alertas Derivadas en Vivo (RF-84 .. RF-87) ───────
+  // Solo el admin ve insumos (RLS): para el resto la lista llega vacía.
   const getActiveAlerts = async () => {
     const alerts = [];
-    const today = todayStr();
-    const nowTime = new Date().toTimeString().slice(0, 5); // "HH:MM"
+    if (!Auth.isAdmin()) return alerts;
 
     try {
-      // 1. Dosis atrasadas de hoy
-      const [meds, admins] = await Promise.all([
-        getMedications(),
-        getTodayAdministrations()
-      ]);
+      const res = await getStockItems();
+      if (!res.ok) return alerts;
+      const now = new Date();
 
-      meds.filter(m => m.status === 'active').forEach(m => {
-        m.schedules.filter(s => s.active).forEach(s => {
-          const administered = admins.some(a => a.scheduleId === s.id && a.scheduledDate === today);
-          if (!administered && s.timeOfDay < nowTime) {
-            alerts.push({
-              id: `dose_late_${s.id}`,
-              type: 'critical',
-              title: 'Dosis atrasada',
-              message: `${m.name} (${s.dose} ${m.unit}) tocaba a las ${s.timeOfDay}`,
-              module: 'administration'
-            });
-          }
-        });
-      });
-
-      // 2. Medicamentos con poco stock (<= 3 días)
-      meds.filter(m => m.status === 'active').forEach(m => {
-        if (m.needsRestock || (m.daysRemaining !== null && m.daysRemaining <= 3)) {
+      res.data.forEach(item => {
+        const st = stockItemStatus(item, now);
+        if (st.checkDue) {
           alerts.push({
-            id: `med_stock_${m.id}`,
-            type: m.currentStock === 0 ? 'critical' : 'alert',
-            title: 'Medicamento por agotarse',
-            message: `${m.name}: quedan ${m.currentStock} ${m.unit} (${m.daysRemaining != null ? m.daysRemaining + ' días' : 'reposición urgente'})`,
-            module: 'medications'
+            id: `stock_check_${item.id}`,
+            type: item.priority === 1 ? 'critical' : 'alert',
+            title: 'Revisión de insumo pendiente',
+            message: item.lastCheckedAt
+              ? `${item.name}: revisar (${STOCK_PRIORITIES[item.priority]?.label}, última ${timeAgo(item.lastCheckedAt).toLowerCase()})`
+              : `${item.name}: aún no tiene conteo`,
+            module: 'stock'
           });
         }
-      });
-
-      // 3. Ítems de inventario bajo umbral mínimo
-      const inventory = await getInventory();
-      inventory.forEach(item => {
-        if (item.isLow) {
+        if (st.stockState === 'empty' || st.stockState === 'low') {
           alerts.push({
-            id: `inv_low_${item.id}`,
-            type: item.currentStock === 0 ? 'critical' : 'alert',
-            title: 'Insumo bajo mínimo',
-            message: `${item.name}: ${item.currentStock} ${item.unit} (mínimo: ${item.minThreshold})`,
-            module: 'inventory'
-          });
-        }
-      });
-
-      // 4. Citas médicas próximas (≤ 2 días)
-      const appointments = await getUpcomingAppointments();
-      const in2Days = new Date();
-      in2Days.setDate(in2Days.getDate() + 2);
-      const limitDate = in2Days.toISOString().split('T')[0];
-
-      appointments.forEach(a => {
-        if (a.apptDate <= limitDate) {
-          alerts.push({
-            id: `appt_soon_${a.id}`,
-            type: a.apptDate === today ? 'critical' : 'alert',
-            title: a.apptDate === today ? 'Cita médica HOY' : 'Cita médica próxima',
-            message: `${a.title} con ${a.doctor || a.specialty || 'médico'} (${formatDate(a.apptDate)} ${a.apptTime || ''})`,
-            module: 'agenda'
+            id: `stock_low_${item.id}`,
+            type: st.stockState === 'empty' ? 'critical' : 'alert',
+            title: st.stockState === 'empty' ? 'Insumo agotado' : 'Insumo por reponer',
+            message: `${item.name}: hay ${item.currentStock} de ${item.targetStock} (faltan ${st.missing})`,
+            module: 'stock'
           });
         }
       });
@@ -3002,10 +1755,8 @@ const Api = (() => {
   const exportAllData = async () => {
     Auth.requireAdmin();
     const [
-      settings, patientStatus, careRoles, profiles, shifts,
-      shiftNotes, medications, restocks, administrations,
-      inventory, movements, tasks, taskTemplates, appointments,
-      recipes, weeklyPlan, complementos, shopping, expenses
+      settings, patientStatus, careRoles, profiles, shifts, shiftNotes,
+      recipes, weeklyPlan, complementos, shopping, stockItems, stockChecks
     ] = await Promise.all([
       getSettings(),
       getPatientStatus(),
@@ -3013,26 +1764,19 @@ const Api = (() => {
       getProfiles(),
       getShiftHistory(200),
       getShiftNotes(),
-      getMedications(),
-      getRestockHistory(),
-      getAdministrationHistory({ limit: 500 }),
-      getInventory(),
-      getInventoryMovements(null, 500),
-      db().from('tasks').select('*'),
-      getTaskTemplates(),
-      getAppointments(),
       getRecipes(),
       getWeeklyPlan(),
       getComplementos(),
       getShoppingList(),
-      getExpenses({ pageSize: 1000 })
+      db().from('stock_items').select('*'),
+      db().from('stock_checks').select('*').order('checked_at', { ascending: false }).limit(2000)
     ]);
 
     const backup = {
       _meta: {
         exportedAt: nowISO(),
         app: 'CuidApp v2.0',
-        version: '2.0.0'
+        version: '2.1.0'
       },
       settings,
       patientStatus,
@@ -3040,87 +1784,18 @@ const Api = (() => {
       profiles,
       shifts,
       shiftNotes,
-      medications,
-      restocks,
-      administrations,
-      inventory,
-      movements,
-      tasks: tasks.data || [],
-      taskTemplates,
-      appointments,
       recipes,
       weeklyPlan,
       complementos,
       shopping,
-      expenses: expenses.expenses
+      stockItems: stockItems.data || [],
+      stockChecks: stockChecks.data || []
     };
 
     return JSON.stringify(backup, null, 2);
   };
 
   // ─── Métodos adicionales requeridos por la interfaz ────────
-  const getMedicationSchedules = async (medicationId) => {
-    if (isLocal()) return wrap(await LocalAdapter.getMedicationSchedules(medicationId));
-    let query = db().from('medication_schedules').select('*').order('time_of_day');
-    if (medicationId) query = query.eq('medication_id', medicationId);
-    const { data, error } = await query;
-    if (error) throw new Error(traducirError(error));
-    return wrap(data.map(s => ({
-      id: s.id,
-      medicationId: s.medication_id,
-      timeOfDay: (s.time_of_day || '08:00').slice(0, 5),
-      scheduledTime: (s.time_of_day || '08:00').slice(0, 5),
-      dose: Number(s.dose),
-      active: s.active
-    })));
-  };
-
-  const getAdministrations = async (filter = {}) => {
-    if (isLocal()) return wrap(await LocalAdapter.getAdministrations(filter));
-    let query = db()
-      .from('medication_administrations')
-      .select('*, profiles(full_name)')
-      .order('scheduled_date', { ascending: false })
-      .order('scheduled_time', { ascending: false });
-    if (filter.date) query = query.eq('scheduled_date', filter.date);
-    if (filter.medicationId) query = query.eq('medication_id', filter.medicationId);
-    const { data, error } = await query;
-    if (error) throw new Error(traducirError(error));
-    return wrap(data.map(a => ({
-      id: a.id,
-      medicationId: a.medication_id,
-      scheduleId: a.schedule_id,
-      scheduledDate: a.scheduled_date,
-      scheduledTime: a.scheduled_time ? a.scheduled_time.slice(0, 5) : null,
-      administeredAt: a.administered_at,
-      administeredByName: a.profiles?.full_name || 'Cuidador',
-      status: a.status,
-      dose: Number(a.dose),
-      notes: a.notes || ''
-    })));
-  };
-
-  const getTaskComments = async (taskId) => {
-    if (isLocal()) return wrap(await LocalAdapter.getTaskComments(taskId));
-    const { data, error } = await db()
-      .from('task_comments')
-      .select('*, profiles(full_name)')
-      .eq('task_id', taskId)
-      .order('created_at');
-    if (error) throw new Error(traducirError(error));
-    return wrap(data.map(c => ({
-      id: c.id,
-      taskId: c.task_id,
-      text: c.text,
-      authorName: c.profiles?.full_name || 'Usuario',
-      createdAt: c.created_at
-    })));
-  };
-
-  const getExpenseTotal = (expenses) => {
-    return (expenses || []).reduce((sum, e) => sum + Number(e.amount || 0), 0);
-  };
-
   const markShiftNotesRead = async (ids) => {
     if (isLocal()) return wrap(await LocalAdapter.markShiftNoteRead(ids));
     const noteIds = Array.isArray(ids) ? ids : [ids];
@@ -3170,57 +1845,16 @@ const Api = (() => {
     markAllShiftNotesRead,
     markShiftNotesRead,
 
-    // Medicamentos y Dosis
-    getMedications,
-    addMedication,
-    updateMedication,
-    deleteMedication,
-    addMedicationSchedule,
-    updateMedicationSchedule,
-    deleteMedicationSchedule,
-    getMedicationSchedules,
-    recordRestock,
-    getRestockHistory,
-    getMedicationRestocks: getRestockHistory,
-    getTodayAdministrations,
-    getAdministrations,
-    recordAdministration,
-    undoAdministration,
-    getAdministrationHistory,
-
-    // Inventario
-    getInventory,
-    addInventoryItem,
-    updateInventoryItem,
-    deleteInventoryItem,
-    adjustInventoryStock,
-    adjustInventory: adjustInventoryStock,
-    getInventoryMovements,
-    getInventoryCategories,
-    addInventoryCategory,
-
-    // Tareas
-    getTasksByDate,
-    getTasksForDate: getTasksByDate,
-    getTodayTasks,
-    addTask,
-    updateTask,
-    deleteTask,
-    cycleTaskStatus,
-    addTaskComment,
-    getTaskComments,
-    getTaskTemplates,
-    addTaskTemplate,
-    updateTaskTemplate,
-    deleteTaskTemplate,
-
-    // Agenda
-    getAppointments,
-    getUpcomingAppointments,
-    getPastAppointments,
-    addAppointment,
-    updateAppointment,
-    deleteAppointment,
+    // Control de Insumos
+    STOCK_CATEGORIES,
+    STOCK_PRIORITIES,
+    stockItemStatus,
+    getStockItems,
+    addStockItem,
+    updateStockItem,
+    deleteStockItem,
+    recordStockCheck,
+    getStockChecks,
 
     // Alimentación
     getRecipes,
@@ -3258,12 +1892,7 @@ const Api = (() => {
     addBulkShoppingItems,
     addShoppingItemsBatch: addBulkShoppingItems,
 
-    // Finanzas y Auditoría
-    getExpenses,
-    getExpensesThisMonth,
-    getExpenseTotal,
-    addExpense,
-    deleteExpense,
+    // Auditoría
     getAuditLog,
     purgeOldAudit,
 

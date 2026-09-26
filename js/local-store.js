@@ -22,17 +22,22 @@ const LocalStore = (() => {
     });
   };
 
-  const todayStr = () => new Date().toISOString().split('T')[0];
+  const localDateStr = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const todayStr = () => localDateStr();
   const nowISO = () => new Date().toISOString();
 
   // ─── Estructura de Datos Inicial (Seed + cuidapp_db.json) ──────
   const getInitialDatabase = () => {
     const now = nowISO();
-    const today = todayStr();
 
     return {
       _meta: {
-        version: '2.0.0',
+        version: '2.4.0',
         createdAt: now,
         mode: 'local'
       },
@@ -91,128 +96,6 @@ const LocalStore = (() => {
           createdAt: now
         }
       ],
-      inventoryCategories: [
-        { id: 'cat_1', name: 'Medicamentos' },
-        { id: 'cat_2', name: 'Insumos Médicos' },
-        { id: 'cat_3', name: 'Alimentos/Suplementos' },
-        { id: 'cat_4', name: 'Higiene Personal' },
-        { id: 'cat_5', name: 'Equipos' },
-        { id: 'cat_6', name: 'Otros' }
-      ],
-      inventoryItems: [
-        {
-          id: 'inv_1',
-          name: 'Gasas estériles',
-          categoryId: 'cat_2',
-          currentStock: 25,
-          unit: 'sobres',
-          minThreshold: 10,
-          presentation: 'Caja 50 sobres',
-          notes: 'Uso en curas',
-          active: true,
-          createdAt: now
-        },
-        {
-          id: 'inv_2',
-          name: 'Guantes de látex (M)',
-          categoryId: 'cat_2',
-          currentStock: 8,
-          unit: 'pares',
-          minThreshold: 15,
-          presentation: 'Caja 100',
-          notes: 'Stock bajo reposición',
-          active: true,
-          createdAt: now
-        },
-        {
-          id: 'inv_3',
-          name: 'Solución salina 0.9%',
-          categoryId: 'cat_2',
-          currentStock: 4,
-          unit: 'frascos',
-          minThreshold: 3,
-          presentation: '500ml',
-          notes: 'Lavados',
-          active: true,
-          createdAt: now
-        }
-      ],
-      inventoryMovements: [
-        { id: 'mov_1', itemId: 'inv_1', delta: 25, previousStock: 0, newStock: 25, reason: 'Inventario inicial', actorId: 'usr_admin', createdAt: now },
-        { id: 'mov_2', itemId: 'inv_2', delta: 8, previousStock: 0, newStock: 8, reason: 'Inventario inicial', actorId: 'usr_admin', createdAt: now },
-        { id: 'mov_3', itemId: 'inv_3', delta: 4, previousStock: 0, newStock: 4, reason: 'Inventario inicial', actorId: 'usr_admin', createdAt: now }
-      ],
-      medications: [
-        {
-          id: 'med_1',
-          name: 'Omeprazol 20mg',
-          instructions: 'En ayunas antes del desayuno',
-          currentStock: 14,
-          unit: 'cápsulas',
-          minThreshold: 7,
-          status: 'active',
-          notes: 'Protector gástrico',
-          createdAt: now
-        },
-        {
-          id: 'med_2',
-          name: 'Paracetamol 500mg',
-          instructions: 'Tomar con medio vaso de agua',
-          currentStock: 20,
-          unit: 'comprimidos',
-          minThreshold: 10,
-          status: 'active',
-          notes: 'Para dolor o fiebre',
-          createdAt: now
-        },
-        {
-          id: 'med_3',
-          name: 'Enoxaparina 40mg',
-          instructions: 'Inyección subcutánea en abdomen',
-          currentStock: 3,
-          unit: 'jeringas',
-          minThreshold: 5,
-          status: 'active',
-          notes: 'Anticoagulante urgente',
-          createdAt: now
-        }
-      ],
-      medicationSchedules: [
-        { id: 'sched_1', medicationId: 'med_1', timeOfDay: '08:00', dose: 1, active: true },
-        { id: 'sched_2', medicationId: 'med_2', timeOfDay: '14:00', dose: 1, active: true },
-        { id: 'sched_3', medicationId: 'med_2', timeOfDay: '21:00', dose: 1, active: true },
-        { id: 'sched_4', medicationId: 'med_3', timeOfDay: '20:00', dose: 1, active: true }
-      ],
-      medicationAdministrations: [],
-      medicationRestocks: [],
-      taskTemplates: [
-        { id: 'tpl_1', title: 'Toma de tensión y temperatura', shiftType: 'morning', isEmergency: false, sortOrder: 1, active: true },
-        { id: 'tpl_2', title: 'Movilización pasiva y cambios posturales', shiftType: 'afternoon', isEmergency: false, sortOrder: 2, active: true },
-        { id: 'tpl_3', title: 'Higiene e hidratación de piel', shiftType: 'night', isEmergency: false, sortOrder: 3, active: true }
-      ],
-      tasks: [
-        { id: 'task_1', templateId: 'tpl_1', title: 'Toma de tensión y temperatura', taskDate: today, shiftType: 'morning', status: 'pending', isEmergency: false, completedAt: null, completedBy: null, createdAt: now },
-        { id: 'task_2', templateId: 'tpl_2', title: 'Movilización pasiva y cambios posturales', taskDate: today, shiftType: 'afternoon', status: 'pending', isEmergency: false, completedAt: null, completedBy: null, createdAt: now },
-        { id: 'task_3', templateId: 'tpl_3', title: 'Higiene e hidratación de piel', taskDate: today, shiftType: 'night', status: 'pending', isEmergency: false, completedAt: null, completedBy: null, createdAt: now }
-      ],
-      taskComments: [],
-      appointments: [
-        {
-          id: 'appt_1',
-          title: 'Control Medicina Interna',
-          specialty: 'Medicina Interna',
-          doctor: 'Dra. Sánchez',
-          apptDate: new Date(Date.now() + 2 * 86400000).toISOString().split('T')[0],
-          apptTime: '11:30',
-          modality: 'presencial',
-          location: 'Hospital Central — Consulta 204',
-          preparation: 'Llevar analíticas recientes y lista de medicamentos',
-          status: 'upcoming',
-          notes: '',
-          resultNotes: '',
-          createdAt: now
-        }
-      ],
       // ── Datos de Menú y Alimentación (inician vacíos para gestión del usuario) ──
       recipes: [],
       recipeIngredients: [],
@@ -226,18 +109,6 @@ const LocalStore = (() => {
       availableComplementos: [],
       complementoIngredients: [],
       shoppingList: [],
-      expenses: [
-        {
-          id: 'exp_1',
-          description: 'Farmacia — Gasas y solución salina',
-          amount: 18.50,
-          expenseDate: today,
-          category: 'Farmacia',
-          linkedRestockId: null,
-          managedBy: 'usr_admin',
-          createdAt: now
-        }
-      ],
       shifts: [],
       shiftNotes: [],
       auditLog: [
@@ -263,10 +134,8 @@ const LocalStore = (() => {
 
     // Colecciones que DEBEN ser arreglos siempre
     const ARRAY_COLS = [
-      'careRoles', 'profiles', 'inventoryCategories', 'inventoryItems', 'inventoryMovements',
-      'medications', 'medicationSchedules', 'medicationAdministrations', 'medicationRestocks',
-      'taskTemplates', 'tasks', 'taskComments', 'appointments', 'recipes', 'recipeIngredients',
-      'weeklyPlan', 'complementos', 'complementoIngredients', 'complementoCategories', 'availableComplementos', 'shoppingList', 'expenses',
+      'careRoles', 'profiles', 'recipes', 'recipeIngredients',
+      'weeklyPlan', 'complementos', 'complementoIngredients', 'complementoCategories', 'availableComplementos', 'shoppingList',
       'shifts', 'shiftNotes', 'auditLog'
     ];
 
@@ -389,7 +258,7 @@ const LocalStore = (() => {
     }
 
     if (!data._meta) data._meta = {};
-    data._meta.version = '2.1.0';
+    data._meta.version = '2.4.0';
     data._meta.updatedAt = nowISO();
 
     return data;
@@ -547,6 +416,7 @@ const LocalStore = (() => {
     if (idx === -1) return null;
 
     const oldItem = { ...db()[col][idx] };
+
     const changedFields = [];
     const oldValues = {};
     const newValues = {};
@@ -574,6 +444,7 @@ const LocalStore = (() => {
     if (idx === -1) return false;
 
     const oldItem = { ...db()[col][idx] };
+
     db()[col].splice(idx, 1);
 
     if (auditTableName) {
@@ -585,222 +456,7 @@ const LocalStore = (() => {
     return true;
   };
 
-  // ─── Emulación de Vistas y RPCs Transaccionales ───────────────
-
-  // medications_view
-  const getMedicationsView = () => {
-    const meds = db().medications || [];
-    const scheds = db().medicationSchedules || [];
-
-    return meds.map(m => {
-      const activeScheds = scheds.filter(s => s.medicationId === m.id && s.active);
-      const dailyConsumption = activeScheds.reduce((sum, s) => sum + (Number(s.dose) || 0), 0);
-      const currentStock = Number(m.currentStock) || 0;
-      const minThreshold = Number(m.minThreshold) || 0;
-
-      let daysRemaining = null;
-      if (dailyConsumption > 0) {
-        daysRemaining = Math.floor(currentStock / dailyConsumption);
-      }
-
-      const needsRestock = currentStock <= minThreshold || (daysRemaining !== null && daysRemaining <= 3);
-
-      return {
-        ...m,
-        schedules: scheds.filter(s => s.medicationId === m.id),
-        dailyConsumption,
-        daysRemaining,
-        needsRestock
-      };
-    });
-  };
-
-  // inventory_items_view
-  const getInventoryItemsView = () => {
-    const items = db().inventoryItems || [];
-    const movs = db().inventoryMovements || [];
-    const cats = db().inventoryCategories || [];
-    const catMap = new Map(cats.map(c => [c.id, c.name]));
-
-    const now = Date.now();
-    const thirtyDaysAgo = now - 30 * 86400000;
-
-    return items.map(item => {
-      const currentStock = Number(item.currentStock) || 0;
-      const minThreshold = Number(item.minThreshold) || 0;
-      const categoryName = catMap.get(item.categoryId) || 'General';
-
-      // Movimientos de salida (delta < 0)
-      const itemMovs = movs.filter(m => m.itemId === item.id && m.delta < 0 && new Date(m.createdAt).getTime() >= thirtyDaysAgo);
-
-      let daysRemaining = null;
-      let avgDailyConsumption = 0;
-
-      if (itemMovs.length >= 3) {
-        const totalConsumed = itemMovs.reduce((sum, m) => sum + Math.abs(m.delta), 0);
-        avgDailyConsumption = totalConsumed / 30;
-        if (avgDailyConsumption > 0) {
-          daysRemaining = Math.floor(currentStock / avgDailyConsumption);
-        }
-      }
-
-      const isLow = currentStock <= minThreshold;
-
-      return {
-        ...item,
-        categoryName,
-        daysRemaining,
-        avgDailyConsumption,
-        isLow
-      };
-    });
-  };
-
-  // RPC: record_administration
-  const recordAdministration = ({ medicationId, scheduleId, status, dose, notes, scheduledDate, scheduledTime }) => {
-    const sDate = scheduledDate || todayStr();
-    const numDose = Number(dose || 1);
-
-    // Verificar si ya fue administrada hoy la misma dosis programada (RF-45)
-    if (scheduleId) {
-      const existing = db().medicationAdministrations.find(a => a.scheduleId === scheduleId && a.scheduledDate === sDate);
-      if (existing) {
-        throw new Error('Esta dosis ya fue registrada para el día de hoy.');
-      }
-    }
-
-    // Si status === 'given' | 'administered', descontar del stock del medicamento
-    if (status === 'given' || status === 'administered') {
-      const med = db().medications.find(m => m.id === medicationId);
-      if (!med) throw new Error('Medicamento no encontrado');
-      if (Number(med.currentStock) < numDose) {
-        throw new Error(`Stock insuficiente (${med.currentStock}) para administrar dosis de ${numDose}`);
-      }
-      const oldStock = med.currentStock;
-      med.currentStock = Number(med.currentStock) - numDose;
-      recordAudit('medications', med.id, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: med.currentStock });
-    }
-
-    const actor = getCurrentUser();
-    const adminRecord = {
-      id: uuid(),
-      medicationId,
-      scheduleId: scheduleId || null,
-      scheduledDate: sDate,
-      scheduledTime: scheduledTime || null,
-      administeredAt: nowISO(),
-      administeredBy: actor.id,
-      administeredByName: actor.fullName,
-      status: (status === 'administered' ? 'given' : status), // 'given' | 'skipped' | 'refused'
-      dose: numDose,
-      notes: notes || '',
-      createdAt: nowISO()
-    };
-
-    db().medicationAdministrations.push(adminRecord);
-    recordAudit('medication_administrations', adminRecord.id, 'INSERT', ['status', 'dose', 'notes'], {}, adminRecord);
-
-    save();
-    return adminRecord.id;
-  };
-
-  // RPC: undo_administration
-  const undoAdministration = (adminId) => {
-    const idx = db().medicationAdministrations.findIndex(a => a.id === adminId);
-    if (idx === -1) throw new Error('Registro de administración no encontrado');
-
-    const admin = db().medicationAdministrations[idx];
-
-    // Si fue dada, restaurar el stock del medicamento
-    if ((admin.status === 'given' || admin.status === 'administered') && admin.medicationId) {
-      const med = db().medications.find(m => m.id === admin.medicationId);
-      if (med) {
-        const oldStock = med.currentStock;
-        med.currentStock = Number(med.currentStock) + Number(admin.dose || 1);
-        recordAudit('medications', med.id, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: med.currentStock });
-      }
-    }
-
-    db().medicationAdministrations.splice(idx, 1);
-    recordAudit('medication_administrations', adminId, 'DELETE', ['id'], admin, {});
-
-    save();
-    return true;
-  };
-
-  // RPC: adjust_inventory
-  const adjustInventory = (itemId, delta, reason = '') => {
-    const item = db().inventoryItems.find(i => i.id === itemId);
-    if (!item) throw new Error('Insumo no encontrado');
-
-    const oldStock = Number(item.currentStock) || 0;
-    const newStock = oldStock + Number(delta);
-    if (newStock < 0) {
-      throw new Error('El stock resultante no puede ser menor que cero.');
-    }
-
-    item.currentStock = newStock;
-
-    const actor = getCurrentUser();
-    const mov = {
-      id: uuid(),
-      itemId,
-      delta: Number(delta),
-      previousStock: oldStock,
-      newStock,
-      reason: reason || (delta > 0 ? 'Ajuste manual (+)' : 'Ajuste manual (-)'),
-      actorId: actor.id,
-      createdAt: nowISO()
-    };
-
-    db().inventoryMovements.push(mov);
-    recordAudit('inventory_items', itemId, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: newStock });
-
-    save();
-    return mov;
-  };
-
-  // RPC: record_restock
-  const recordRestock = ({ medicationId, quantity, establishment = '', cost = 0 }) => {
-    const med = db().medications.find(m => m.id === medicationId);
-    if (!med) throw new Error('Medicamento no encontrado');
-
-    const oldStock = Number(med.currentStock) || 0;
-    const addQty = Number(quantity) || 0;
-    med.currentStock = oldStock + addQty;
-
-    const actor = getCurrentUser();
-    const restockId = uuid();
-    const restockRecord = {
-      id: restockId,
-      medicationId,
-      quantity: addQty,
-      establishment: establishment || '',
-      cost: Number(cost) || 0,
-      managedBy: actor.id,
-      createdAt: nowISO()
-    };
-    db().medicationRestocks.push(restockRecord);
-
-    // Crear gasto asociado automáticamente si costo > 0
-    if (cost > 0) {
-      db().expenses.push({
-        id: uuid(),
-        description: `Reposición de ${med.name}${establishment ? ' en ' + establishment : ''}`,
-        amount: Number(cost),
-        expenseDate: todayStr(),
-        category: 'Farmacia',
-        linkedRestockId: restockId,
-        managedBy: actor.id,
-        createdAt: nowISO()
-      });
-    }
-
-    recordAudit('medications', medicationId, 'UPDATE', ['current_stock'], { current_stock: oldStock }, { current_stock: med.currentStock });
-
-    save();
-    return restockId;
-  };
+  // ─── Emulación de RPCs Transaccionales ─────────────────────
 
   // RPC: take_shift
   const takeShift = (careRoleId) => {
@@ -845,39 +501,6 @@ const LocalStore = (() => {
 
     save();
     return deletedCount;
-  };
-
-  // RPC: generate_recurring_tasks
-  const generateRecurringTasks = () => {
-    const today = todayStr();
-    const templates = (db().taskTemplates || []).filter(t => t.active);
-    let count = 0;
-
-    templates.forEach(t => {
-      const exists = db().tasks.some(task => task.templateId === t.id && task.taskDate === today);
-      if (!exists) {
-        db().tasks.push({
-          id: uuid(),
-          templateId: t.id,
-          title: t.title,
-          description: t.description || '',
-          taskDate: today,
-          shift: t.shift || t.shiftType || 'morning',
-          shiftType: t.shift || t.shiftType || 'morning',
-          assignedCareRoleId: t.assignedCareRoleId || null,
-          assignedProfileId: t.assignedProfileId || null,
-          status: 'pending',
-          isEmergency: t.isEmergency || false,
-          completedAt: null,
-          completedBy: null,
-          createdAt: nowISO()
-        });
-        count++;
-      }
-    });
-
-    if (count > 0) save();
-    return count;
   };
 
   // Configuración y Paciente
@@ -941,18 +564,10 @@ const LocalStore = (() => {
     remove,
     getCurrentUser,
     setCurrentUserId,
-    // Vistas
-    getMedicationsView,
-    getInventoryItemsView,
     // RPCs
-    recordAdministration,
-    undoAdministration,
-    adjustInventory,
-    recordRestock,
     takeShift,
     endShift,
     purgeOldAudit,
-    generateRecurringTasks,
     resetToDefaults,
     sanitizeAndMigrate: () => sanitizeAndMigrate(db())
   };

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="description" content="CuidApp — Coordinación de cuidados para paciente crítico en casa. Turnos, administración de dosis, stock, agenda médica y tareas.">
+  <meta name="description" content="CuidApp — Coordinación de cuidados para paciente crítico en casa. Turnos, personal, menú y control de insumos.">
   <meta name="theme-color" content="#080d17">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -138,6 +138,7 @@
   <!-- ── HEADER ─────────────────────────────────── -->
   <header id="app-header" role="banner">
     <div class="hdr-left">
+      <button id="menu-btn" class="btn btn-icon" aria-label="Abrir menú" aria-controls="sidebar" aria-expanded="false">☰</button>
       <span id="hdr-status-badge" class="status-badge stable">
         <span class="status-dot pulse"></span>🟢
       </span>
@@ -179,29 +180,14 @@
     <!-- 🏥 Dashboard -->
     <section id="panel-dashboard" class="panel" role="region" aria-label="Panel de inicio"></section>
 
-    <!-- 💊 Administración de Dosis (NUEVO) -->
-    <section id="panel-administration" class="panel" role="region" aria-label="Dosis del día"></section>
+    <!-- 🍽️ Menú: alimentación y compras -->
+    <section id="panel-food" class="panel" role="region" aria-label="Alimentación y compras"></section>
 
-    <!-- 📋 Tareas -->
-    <section id="panel-tasks" class="panel" role="region" aria-label="Tareas diarias"></section>
-
-    <!-- 📦 Inventario -->
-    <section id="panel-inventory" class="panel" role="region" aria-label="Inventario y stock"></section>
-
-    <!-- 💊 Medicamentos (catálogo y reposición) -->
-    <section id="panel-medications" class="panel" role="region" aria-label="Catálogo de medicamentos"></section>
+    <!-- 📦 Control de Insumos (solo admin) -->
+    <section id="panel-stock" class="panel" role="region" aria-label="Control de insumos"></section>
 
     <!-- 👥 Roles y Personal -->
     <section id="panel-roles" class="panel" role="region" aria-label="Roles y personal"></section>
-
-    <!-- 📅 Agenda Médica -->
-    <section id="panel-agenda" class="panel" role="region" aria-label="Agenda médica"></section>
-
-    <!-- 🍽️ Alimentación y Compras -->
-    <section id="panel-food" class="panel" role="region" aria-label="Alimentación y compras"></section>
-
-    <!-- 💰 Gastos -->
-    <section id="panel-expenses" class="panel" role="region" aria-label="Gastos"></section>
 
     <!-- 🔍 Auditoría (solo admin) -->
     <section id="panel-audit" class="panel" role="region" aria-label="Registro de auditoría"></section>
@@ -212,81 +198,47 @@
   </main><!-- /main-content -->
 
 
-  <!-- ── BOTTOM NAV (5 posiciones directas: Inicio, Menú, Dosis, Tareas, Más) ── -->
-  <nav id="bottom-nav" role="navigation" aria-label="Navegación principal">
-    <button class="nav-btn" data-panel="dashboard" aria-label="Inicio">
-      <span class="nav-icon">🏥</span>
-      <span class="nav-label">Inicio</span>
-      <span class="nav-badge-dot" data-for="dashboard"></span>
-    </button>
-    <button class="nav-btn" data-panel="food" aria-label="Menú">
-      <span class="nav-icon">🍽️</span>
-      <span class="nav-label">Menú</span>
-    </button>
-    <button class="nav-btn" data-panel="administration" aria-label="Dosis">
-      <span class="nav-icon">💊</span>
-      <span class="nav-label">Dosis</span>
-    </button>
-    <button class="nav-btn" data-panel="tasks" aria-label="Tareas">
-      <span class="nav-icon">📋</span>
-      <span class="nav-label">Tareas</span>
-    </button>
-    <button class="nav-btn" data-panel="more" aria-label="Más opciones">
-      <span class="nav-icon">⋯</span>
-      <span class="nav-label">Más</span>
-    </button>
-  </nav>
-
 </div><!-- /app -->
 
 
 <!-- ═══════════════════════════════════════════════
-     MENÚ "MÁS" (slide-up)
+     SIDEBAR (cajón en iPhone, fijo en pantallas grandes)
      ════════════════════════════════════════════ -->
-<div id="more-menu-overlay" aria-hidden="true"></div>
-<div id="more-menu" role="dialog" aria-label="Más opciones">
-  <div class="modal-handle"></div>
-  <div class="card-title" style="margin-bottom:12px;">MÁS MÓDULOS</div>
-  <div class="more-menu-grid">
-    <div class="more-item" data-panel="food" role="button" tabindex="0">
-      <span class="more-icon">🍽️</span>
-      <span class="more-label">Menús y Comidas</span>
+<div id="sidebar-overlay" aria-hidden="true"></div>
+<nav id="sidebar" role="navigation" aria-label="Navegación principal">
+  <div class="side-head">
+    <div>
+      <div class="side-brand">CuidApp</div>
+      <div class="side-user" id="side-user-name"></div>
     </div>
-    <div class="more-item" data-panel="inventory" role="button" tabindex="0">
-      <span class="more-icon">📦</span>
-      <span class="more-label">Stock e Insumos</span>
-    </div>
-    <div class="more-item" data-panel="medications" role="button" tabindex="0">
-      <span class="more-icon">💊</span>
-      <span class="more-label">Medicamentos</span>
-    </div>
-    <div class="more-item" data-panel="roles" role="button" tabindex="0">
-      <span class="more-icon">👥</span>
-      <span class="more-label">Roles y Personal</span>
-    </div>
-    <div class="more-item" data-panel="agenda" role="button" tabindex="0">
-      <span class="more-icon">📅</span>
-      <span class="more-label">Agenda Médica</span>
-    </div>
-    <div class="more-item" data-panel="expenses" role="button" tabindex="0">
-      <span class="more-icon">💰</span>
-      <span class="more-label">Gastos</span>
-    </div>
-    <div class="more-item" data-panel="settings" role="button" tabindex="0">
-      <span class="more-icon">⚙️</span>
-      <span class="more-label">Configuración</span>
-    </div>
-    <div class="more-item" id="more-item-audit" data-panel="audit" role="button" tabindex="0">
-      <span class="more-icon">🔍</span>
-      <span class="more-label">Auditoría</span>
-    </div>
-    <div class="more-item" onclick="App.exportData(); App.closeMoreMenu();" role="button" tabindex="0">
-      <span class="more-icon">💾</span>
-      <span class="more-label">Guardar Copia</span>
-    </div>
+    <button id="sidebar-close-btn" class="btn btn-icon" aria-label="Cerrar menú">✕</button>
   </div>
-</div>
-
+  <div class="side-nav">
+    <button class="side-item" data-panel="dashboard">
+      <span class="side-icon">🏥</span><span class="side-label">Inicio</span>
+    </button>
+    <button class="side-item" data-panel="food">
+      <span class="side-icon">🍽️</span><span class="side-label">Menú</span>
+    </button>
+    <button class="side-item" data-panel="stock" data-admin-only>
+      <span class="side-icon">📦</span><span class="side-label">Insumos</span>
+      <span class="side-badge" data-for="stock" hidden></span>
+    </button>
+    <button class="side-item" data-panel="roles">
+      <span class="side-icon">👥</span><span class="side-label">Roles y Personal</span>
+    </button>
+    <button class="side-item" data-panel="settings">
+      <span class="side-icon">⚙️</span><span class="side-label">Configuración</span>
+    </button>
+    <button class="side-item" data-panel="audit" data-admin-only>
+      <span class="side-icon">🔍</span><span class="side-label">Auditoría</span>
+    </button>
+    <div class="side-sep"></div>
+    <button class="side-item" id="side-backup-btn" data-admin-only>
+      <span class="side-icon">💾</span><span class="side-label">Guardar copia</span>
+    </button>
+  </div>
+</nav>
 
 <!-- ═══════════════════════════════════════════════
      MODAL UNIVERSAL
@@ -353,34 +305,6 @@
 
 
 <!-- ═══════════════════════════════════════════════
-     MODO "¿QUÉ HAGO AHORA?"
-     ════════════════════════════════════════════ -->
-<div id="whatnow-overlay" role="dialog" aria-modal="true" aria-label="Guía de turno">
-  <div class="wn-title">💡 ¿Qué hago ahora?</div>
-  <div class="wn-sub">Tareas pendientes de tu turno</div>
-
-  <div id="wn-task-list" style="width:100%;max-width:360px;">
-    <!-- Populated by app.js -->
-  </div>
-
-  <div class="wn-nav" style="margin-top:8px;">
-    <button id="wn-close-btn" class="btn btn-secondary">
-      ✕ Cerrar guía
-    </button>
-    <button class="btn btn-primary" onclick="App.navigateTo('tasks');App.closeWhatNow();">
-      Ver todas las tareas
-    </button>
-  </div>
-
-  <div style="margin-top:24px;text-align:center;">
-    <div style="font-size:.75rem;color:var(--text-muted);">
-      Toca una tarea en el módulo de Tareas<br>para marcarla como completada
-    </div>
-  </div>
-</div>
-
-
-<!-- ═══════════════════════════════════════════════
      TOAST CONTAINER
      ════════════════════════════════════════════ -->
 <div id="toast-container" aria-live="polite" aria-atomic="false">
@@ -399,13 +323,8 @@
 <script src="js/ui.js"></script>
 <script src="js/dashboard.js"></script>
 <script src="js/roles.js"></script>
-<script src="js/medications.js"></script>
-<script src="js/administration.js"></script>
-<script src="js/inventory.js"></script>
-<script src="js/tasks.js"></script>
-<script src="js/agenda.js"></script>
+<script src="js/stock.js"></script>
 <script src="js/food.js"></script>
-<script src="js/expenses.js"></script>
 <script src="js/settings.js"></script>
 <script src="js/audit.js"></script>
 <script src="js/app.js"></script>

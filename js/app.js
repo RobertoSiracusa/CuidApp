@@ -8,10 +8,12 @@ const App = (() => {
 
   let currentPanel = 'dashboard';
 
+  // Módulos visibles solo para administradores
+  const ADMIN_PANELS = ['stock', 'audit'];
+
   // ─── Enrutador y Navegación ────────────────────────────────
   const navigateTo = async (panelId, subTab) => {
-    // Si intenta ir a auditoría y no es admin, redirige al dashboard
-    if (panelId === 'audit' && !Auth.isAdmin()) {
+    if (ADMIN_PANELS.includes(panelId) && !Auth.isAdmin()) {
       Ui.toast('Acceso exclusivo para administradores', 'warning');
       panelId = 'dashboard';
     }
@@ -19,19 +21,18 @@ const App = (() => {
     // Ocultar todos los paneles
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
 
-    // Actualizar botones de navegación inferior
-    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
-
     // Mostrar panel destino
     const target = document.getElementById(`panel-${panelId}`);
     if (target) target.classList.add('active');
 
-    // Botón de barra inferior activo (si aplica)
-    const navBtn = document.querySelector(`.nav-btn[data-panel="${panelId}"]`);
-    if (navBtn) navBtn.classList.add('active');
+    // Ítem activo del sidebar
+    document.querySelectorAll('.side-item[data-panel]').forEach(b => {
+      b.classList.toggle('active', b.dataset.panel === panelId);
+    });
 
-    // Ocultar menú "Más"
-    closeMoreMenu();
+    closeSidebar();
+    document.getElementById('main-content')?.scrollTo(0, 0);
+    window.scrollTo(0, 0);
 
     currentPanel = panelId;
 
@@ -39,20 +40,19 @@ const App = (() => {
       const fm = window.FoodModule || (typeof FoodModule !== 'undefined' ? FoodModule : null);
       if (fm?.setTab) fm.setTab(subTab);
     }
+    if (panelId === 'stock' && subTab) {
+      const sm = window.StockModule || (typeof StockModule !== 'undefined' ? StockModule : null);
+      if (sm?.setFilter) sm.setFilter(subTab);
+    }
 
     // Despacho al módulo correspondiente
     const modules = {
-      dashboard:      () => (window.DashboardModule || (typeof DashboardModule !== 'undefined' ? DashboardModule : null))?.render(),
-      administration: () => (window.AdministrationModule || (typeof AdministrationModule !== 'undefined' ? AdministrationModule : null))?.render(),
-      tasks:          () => (window.TasksModule || (typeof TasksModule !== 'undefined' ? TasksModule : null))?.render(),
-      inventory:      () => (window.InventoryModule || (typeof InventoryModule !== 'undefined' ? InventoryModule : null))?.render(),
-      medications:    () => (window.MedicationsModule || (typeof MedicationsModule !== 'undefined' ? MedicationsModule : null))?.render(),
-      roles:          () => (window.RolesModule || (typeof RolesModule !== 'undefined' ? RolesModule : null))?.render(),
-      agenda:         () => (window.AgendaModule || (typeof AgendaModule !== 'undefined' ? AgendaModule : null))?.render(),
-      food:           () => (window.FoodModule || (typeof FoodModule !== 'undefined' ? FoodModule : null))?.render(),
-      expenses:       () => (window.ExpensesModule || (typeof ExpensesModule !== 'undefined' ? ExpensesModule : null))?.render(),
-      settings:       () => (window.SettingsModule || (typeof SettingsModule !== 'undefined' ? SettingsModule : null))?.render(),
-      audit:          () => (window.AuditModule || (typeof AuditModule !== 'undefined' ? AuditModule : null))?.render()
+      dashboard: () => (window.DashboardModule || (typeof DashboardModule !== 'undefined' ? DashboardModule : null))?.render(),
+      food:      () => (window.FoodModule || (typeof FoodModule !== 'undefined' ? FoodModule : null))?.render(),
+      stock:     () => (window.StockModule || (typeof StockModule !== 'undefined' ? StockModule : null))?.render(),
+      roles:     () => (window.RolesModule || (typeof RolesModule !== 'undefined' ? RolesModule : null))?.render(),
+      settings:  () => (window.SettingsModule || (typeof SettingsModule !== 'undefined' ? SettingsModule : null))?.render(),
+      audit:     () => (window.AuditModule || (typeof AuditModule !== 'undefined' ? AuditModule : null))?.render()
     };
 
     if (modules[panelId]) {
@@ -60,26 +60,34 @@ const App = (() => {
     }
   };
 
-  // ─── Menú "Más" (slide-up) ────────────────────────────────
-  const toggleMoreMenu = () => {
-    const moreMenu = document.getElementById('more-menu');
-    const overlay = document.getElementById('more-menu-overlay');
-    if (!moreMenu || !overlay) return;
+  // ─── Sidebar (cajón en iPhone, fijo desde 900px) ──────────
+  const openSidebar = () => {
+    document.getElementById('sidebar')?.classList.add('open');
+    document.getElementById('sidebar-overlay')?.classList.add('open');
+    document.getElementById('menu-btn')?.setAttribute('aria-expanded', 'true');
+  };
 
-    // Ocultar ítem de auditoría si no es admin
-    const auditItem = moreMenu.querySelector('[data-panel="audit"]');
-    if (auditItem) {
-      auditItem.style.display = Auth.isAdmin() ? 'flex' : 'none';
+  const closeSidebar = () => {
+    document.getElementById('sidebar')?.classList.remove('open');
+    document.getElementById('sidebar-overlay')?.classList.remove('open');
+    document.getElementById('menu-btn')?.setAttribute('aria-expanded', 'false');
+  };
+
+  // Oculta los accesos de administrador y muestra quién tiene la sesión
+  const applyRoleVisibility = () => {
+    const isAdmin = Auth.isAdmin();
+    document.querySelectorAll('#sidebar [data-admin-only]').forEach(el => {
+      el.style.display = isAdmin ? '' : 'none';
+    });
+    const nameEl = document.getElementById('side-user-name');
+    const profile = Auth.getProfile();
+    if (nameEl) {
+      const name = profile?.fullName || profile?.full_name || '';
+      nameEl.textContent = name ? `${name}${isAdmin ? ' · Admin' : ''}` : '';
     }
-
-    overlay.classList.toggle('open');
-    moreMenu.classList.toggle('open');
   };
 
-  const closeMoreMenu = () => {
-    document.getElementById('more-menu-overlay')?.classList.remove('open');
-    document.getElementById('more-menu')?.classList.remove('open');
-  };
+  const exportData = () => SettingsModule.exportData();
 
   // ─── Botón Flotante y Modal de Emergencia (RF-89 .. RF-91) ──
   const showEmergency = async () => {
@@ -121,81 +129,6 @@ const App = (() => {
 
   const closeEmergency = () => {
     document.getElementById('emergency-modal')?.classList.remove('open');
-  };
-
-  // ─── Modo "¿Qué hago ahora?" (RF-99) ──────────────────────
-  // Lista lo pendiente del día: dosis primero, luego tareas
-  const showWhatNow = async () => {
-    const overlay = document.getElementById('whatnow-overlay');
-    const list = document.getElementById('wn-task-list');
-    if (!overlay || !list) return;
-
-    list.innerHTML = '<div class="skeleton-line" style="height:40px;margin-bottom:8px;"></div><div class="skeleton-line" style="height:40px;"></div>';
-    overlay.classList.add('open');
-
-    try {
-      const todayStr = Api.todayStr();
-      const [medsRes, schedRes, adminRes, tasksRes] = await Promise.all([
-        Api.getMedications(),
-        Api.getMedicationSchedules(),
-        Api.getAdministrations({ date: todayStr }),
-        Api.getTasksForDate(todayStr)
-      ]);
-
-      const meds = (medsRes.data || []).filter(m => m.status === 'active');
-      const medMap = new Map(meds.map(m => [m.id, m]));
-      const schedules = (schedRes.data || []).filter(s => s.active && medMap.has(s.medicationId));
-      const admins = adminRes.data || [];
-      const adminSchedIds = new Set(admins.map(a => a.scheduleId).filter(Boolean));
-
-      // Dosis pendientes de hoy
-      const pendingDoses = schedules
-        .filter(s => !adminSchedIds.has(s.id))
-        .map(s => {
-          const med = medMap.get(s.medicationId);
-          return {
-            type: 'dose',
-            time: s.scheduledTime?.slice(0, 5) || 'Hoy',
-            title: `💊 Dosis: ${med?.name || 'Medicamento'}`,
-            subtitle: `${s.dose} ${med?.unit || ''} a las ${s.scheduledTime?.slice(0, 5) || ''}`
-          };
-        });
-
-      // Tareas pendientes de hoy
-      const pendingTasks = (tasksRes.data || [])
-        .filter(t => t.status !== 'completed')
-        .map(t => ({
-          type: 'task',
-          time: t.shift === 'morning' ? 'Mañana' : t.shift === 'afternoon' ? 'Tarde' : t.shift === 'night' ? 'Noche' : 'Cualquier turno',
-          title: `📋 ${t.title}`,
-          subtitle: t.description || 'Sin notas adicionales'
-        }));
-
-      const allItems = pendingDoses.concat(pendingTasks);
-
-      if (allItems.length === 0) {
-        list.innerHTML = `
-          <div class="wn-task" style="text-align:center;">
-            <div class="wn-task-num">🎉</div>
-            <div class="wn-task-text">¡Todo listo por hoy! No hay dosis ni tareas pendientes.</div>
-          </div>
-        `;
-      } else {
-        list.innerHTML = allItems.map((item, idx) => `
-          <div class="wn-task" style="cursor:pointer;" onclick="App.closeWhatNow();App.navigateTo('${item.type === 'dose' ? 'administration' : 'tasks'}')">
-            <div class="wn-task-num">${item.type === 'dose' ? '💊 Dosis' : '📋 Tarea'} #${idx + 1} (${item.time})</div>
-            <div class="wn-task-text">${Api.escapeHtml(item.title)}</div>
-            <div class="text-sm text-muted" style="margin-top:4px;">${Api.escapeHtml(item.subtitle)}</div>
-          </div>
-        `).join('');
-      }
-    } catch (err) {
-      list.innerHTML = `<div class="text-xs text-critical">Error al cargar pendientes: ${Api.escapeHtml(err.message)}</div>`;
-    }
-  };
-
-  const closeWhatNow = () => {
-    document.getElementById('whatnow-overlay')?.classList.remove('open');
   };
 
   // ─── Actualización del Encabezado Global ───────────────────
@@ -274,6 +207,7 @@ const App = (() => {
     document.getElementById('auth-screen')?.classList.add('hidden');
     document.getElementById('pending-screen')?.classList.add('hidden');
     document.getElementById('app')?.classList.remove('hidden');
+    applyRoleVisibility();
 
     // Bootstrap de la aplicación con la base de datos
     try {
@@ -428,27 +362,20 @@ const App = (() => {
     // dialogo cuyos botones Confirmar y Cancelar no tienen handler.
     Ui.init();
 
-    // Configurar listeners de navegación inferior
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const panel = btn.dataset.panel;
-        if (panel === 'more') {
-          toggleMoreMenu();
-          return;
-        }
-        navigateTo(panel);
-      });
+    // Sidebar: módulos, copia de seguridad, apertura y cierre
+    document.querySelectorAll('.side-item[data-panel]').forEach(item => {
+      item.addEventListener('click', () => navigateTo(item.dataset.panel));
     });
-
-    // Configurar listeners de menú "Más"
-    document.querySelectorAll('.more-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const panel = item.dataset.panel;
-        if (panel) navigateTo(panel);
-      });
+    document.getElementById('side-backup-btn')?.addEventListener('click', () => {
+      closeSidebar();
+      exportData();
     });
-
-    document.getElementById('more-menu-overlay')?.addEventListener('click', closeMoreMenu);
+    document.getElementById('menu-btn')?.addEventListener('click', openSidebar);
+    document.getElementById('sidebar-close-btn')?.addEventListener('click', closeSidebar);
+    document.getElementById('sidebar-overlay')?.addEventListener('click', closeSidebar);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeSidebar();
+    });
 
     // Botón de emergencia flotante y modal
     document.getElementById('emergency-fab')?.addEventListener('click', showEmergency);
@@ -456,9 +383,6 @@ const App = (() => {
     document.getElementById('emergency-modal')?.addEventListener('click', (e) => {
       if (e.target.id === 'emergency-modal') closeEmergency();
     });
-
-    // Modo "¿Qué hago ahora?"
-    document.getElementById('wn-close-btn')?.addEventListener('click', closeWhatNow);
 
     // Configurar formularios de autenticación
     setupAuthUI();
@@ -507,12 +431,11 @@ const App = (() => {
     showModal: Ui.showModal,
     closeModal: Ui.closeModal,
     confirm: Ui.confirm,
-    toggleMoreMenu,
-    closeMoreMenu,
+    openSidebar,
+    closeSidebar,
+    exportData,
     showEmergency,
     closeEmergency,
-    showWhatNow,
-    closeWhatNow,
     updateHeader
   };
 })();

@@ -55,7 +55,12 @@ const Ui = (() => {
     body.innerHTML = contentHtml;
     modalCallback = onConfirm;
 
-    if (confirmBtn) confirmBtn.style.display = showConfirmBtn ? 'inline-flex' : 'none';
+    // Restablecer botones: algunos módulos cambian su texto o los ocultan
+    if (confirmBtn) {
+      confirmBtn.textContent = 'Guardar';
+      confirmBtn.style.display = showConfirmBtn ? 'inline-flex' : 'none';
+    }
+    if (cancelBtn) cancelBtn.style.display = '';
     overlay.classList.add('open');
     document.body.style.overflow = 'hidden';
 
@@ -178,13 +183,21 @@ const Ui = (() => {
       }
     }
 
+    // Contador de revisiones pendientes junto a "Insumos" en el sidebar
+    const stockBadge = document.querySelector('.side-badge[data-for="stock"]');
+    if (stockBadge) {
+      const due = alerts.filter(a => a.id.startsWith('stock_check_')).length;
+      stockBadge.textContent = due > 9 ? '9+' : String(due);
+      stockBadge.hidden = due === 0;
+    }
+
     if (!alerts.length) {
       listEl.innerHTML = `
         <div style="text-align:center; padding:32px 16px; color:var(--text-sec);">
           <div style="font-size:2rem; margin-bottom:8px;">✨</div>
           <div style="font-weight:600; font-size:0.9375rem; color:var(--text);">Todo en orden</div>
           <div style="font-size:0.8125rem; color:var(--text-muted); margin-top:4px;">
-            No hay dosis pendientes atrasadas ni insumos agotados
+            No hay revisiones de insumos pendientes ni insumos por reponer
           </div>
         </div>
       `;
