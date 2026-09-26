@@ -39,6 +39,11 @@ const Api = (() => {
     if (/stock_checks_quantity_check|stock_items_target_stock_check/i.test(msg)) {
       return 'La cantidad no puede ser negativa.';
     }
+    if (/stock_p[123]_hours/i.test(msg)) {
+      return /check/i.test(msg)
+        ? 'Las horas deben estar entre 1 y 720.'
+        : 'Falta aplicar 08_prioridades_insumos.sql en Supabase.';
+    }
 
     // 2. Errores de red y sesión
     if (/network/i.test(msg) || /fetch/i.test(msg)) {
@@ -942,8 +947,15 @@ const Api = (() => {
       emergencyContactName: data?.emergency_contact_name || '',
       emergencyContactPhone: data?.emergency_contact_phone || '',
       emergencyContactWhatsapp: data?.emergency_contact_whatsapp || '',
+      // Horas entre revisiones por nivel (08_prioridades_insumos.sql)
+      stockPriorityHours: {
+        1: Number(data?.stock_p1_hours) || 24,
+        2: Number(data?.stock_p2_hours) || 48,
+        3: Number(data?.stock_p3_hours) || 72
+      },
       updatedAt: data?.updated_at
     };
+    applyStockPriorityHours(_cache.settings.stockPriorityHours);
     return _cache.settings;
   };
 
@@ -1470,6 +1482,8 @@ const Api = (() => {
       amount: s.amount || '',
       unit: s.unit || '',
       source: s.source || 'manual',
+      // Los insumos por reponer muestran cuánto falta junto al nombre
+      origins: s.source === 'insumos' ? [`Insumos · faltan ${s.amount}`] : [],
       checked: !!s.checked,
       createdAt: s.created_at
     }));
@@ -1551,14 +1565,41 @@ const Api = (() => {
     { id: 'otro',              label: 'Otro',                 icon: '📦' }
   ];
 
-  // Nivel de prioridad → horas entre revisiones
+  // Nivel de prioridad → horas entre revisiones. Las horas por defecto se
+  // sustituyen por las guardadas en settings al cargar la configuración.
   const STOCK_PRIORITIES = {
     1: { label: 'Nivel 1 · Crítico', hours: 24 },
     2: { label: 'Nivel 2',           hours: 48 },
     3: { label: 'Nivel 3',           hours: 72 }
   };
 
+  const applyStockPriorityHours = (hours = {}) => {
+    [1, 2, 3].forEach(p => {
+      const h = Number(hours[p]);
+      if (Number.isInteger(h) && h > 0) STOCK_PRIORITIES[p].hours = h;
+    });
+  };
+
   const LOCAL_STOCK_ERROR = 'El control de insumos requiere conexión con Supabase.';
+
+  // Solo admin (RLS de settings). Requiere 08_prioridades_insumos.sql.
+  const saveStockPriorityHours = async (hours) => {
+    if (isLocal()) return { ok: false, error: LOCAL_STOCK_ERROR };
+    Auth.requireAdmin();
+    const { error } = await db()
+      .from('settings')
+      .update({
+        stock_p1_hours: hours[1],
+        stock_p2_hours: hours[2],
+        stock_p3_hours: hours[3],
+        updated_at: nowISO()
+      })
+      .eq('id', true);
+    if (error) return { ok: false, error: traducirError(error) };
+    applyStockPriorityHours(hours);
+    invalidateCache('settings');
+    return { ok: true };
+  };
 
   /**
    * Estado derivado de un insumo en un instante dado:
@@ -1664,6 +1705,59 @@ const Api = (() => {
         checkedByName: c.profiles?.full_name || 'Administrador'
       }))
     };
+  };
+
+  /**
+   * Mantiene en la lista de compra (source = 'insumos') los insumos por reponer:
+   * añade los que faltan, ajusta la cantidad y quita los que ya están completos.
+   * Solo toca entradas sin marcar; una entrada marcada como comprada se respeta
+   * y no se duplica hasta que se limpie de la lista.
+   */
+  const syncStockShopping = async () => {
+    if (isLocal() || !Auth.isAdmin()) return { ok: true };
+    const [itemsRes, listRes] = await Promise.all([
+      getStockItems(),
+      db().from('shopping_list').select('*').eq('source', 'insumos')
+    ]);
+    if (!itemsRes.ok) return itemsRes;
+    if (listRes.error) return { ok: false, error: traducirError(listRes.error) };
+
+    const key = (s) => String(s || '').trim().toLowerCase();
+    const entries = listRes.data || [];
+    const now = new Date();
+    const inserts = [];
+    const updates = [];
+    const keep = new Set();
+
+    itemsRes.data.forEach(item => {
+      const st = stockItemStatus(item, now);
+      if (!st.missing) return; // sin conteo o completo
+      const k = key(item.name);
+      keep.add(k);
+      const amount = String(st.missing);
+      const open = entries.find(e => !e.checked && key(e.name) === k);
+      const bought = entries.find(e => e.checked && key(e.name) === k);
+      if (open) {
+        if (open.amount !== amount) updates.push({ id: open.id, amount });
+      } else if (!bought) {
+        inserts.push({ name: item.name, amount, unit: '', source: 'insumos', checked: false });
+      }
+    });
+    const deletes = entries.filter(e => !e.checked && !keep.has(key(e.name))).map(e => e.id);
+
+    if (inserts.length) {
+      const { error } = await db().from('shopping_list').insert(inserts);
+      if (error) return { ok: false, error: traducirError(error) };
+    }
+    for (const u of updates) {
+      const { error } = await db().from('shopping_list').update({ amount: u.amount }).eq('id', u.id);
+      if (error) return { ok: false, error: traducirError(error) };
+    }
+    if (deletes.length) {
+      const { error } = await db().from('shopping_list').delete().in('id', deletes);
+      if (error) return { ok: false, error: traducirError(error) };
+    }
+    return { ok: true, added: inserts.length, updated: updates.length, removed: deletes.length };
   };
 
   // ─── 13. Auditoría (audit_log, solo admin) ────────────────
@@ -1848,6 +1942,8 @@ const Api = (() => {
     // Control de Insumos
     STOCK_CATEGORIES,
     STOCK_PRIORITIES,
+    saveStockPriorityHours,
+    syncStockShopping,
     stockItemStatus,
     getStockItems,
     addStockItem,

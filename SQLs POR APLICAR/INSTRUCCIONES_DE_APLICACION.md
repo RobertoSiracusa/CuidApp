@@ -25,6 +25,11 @@ Scripts que deben ejecutarse en el **SQL Editor de Supabase** para activar el m�
 - RLS: **solo administradores** pueden ver y operar el módulo.
 - Transaccional y re-ejecutable.
 
+### 3. `08_prioridades_insumos.sql`
+- **Propósito:** añade a `settings` las horas entre revisiones de cada nivel (`stock_p1_hours`, `stock_p2_hours`, `stock_p3_hours`; por defecto 24 / 48 / 72, entre 1 y 720).
+- El admin las cambia desde Insumos → ⚙️. Sin este script la app usa 24 / 48 / 72 y avisa al intentar guardar.
+- Transaccional y re-ejecutable.
+
 ---
 
 ## Verificación posterior
