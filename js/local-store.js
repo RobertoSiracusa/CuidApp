@@ -31,7 +31,7 @@ const LocalStore = (() => {
   const todayStr = () => localDateStr();
   const nowISO = () => new Date().toISOString();
 
-  // ─── Estructura de Datos Inicial (Seed + cuidapp_db.json) ──────
+  // ─── Estructura de Datos Inicial (modo local) ───────────────────
   const getInitialDatabase = () => {
     const now = nowISO();
 
