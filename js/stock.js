@@ -1,14 +1,16 @@
 /* ═══════════════════════════════════════════════════════════════
    CuidApp v2 — Control de Insumos (js/stock.js)
    Registro de insumos y medicamentos con stock objetivo y prioridad.
-   Nivel 1 se revisa cada 24 h, nivel 2 cada 48 h y nivel 3 cada 72 h.
+   Cada nivel de prioridad tiene su intervalo de revisión (por defecto
+   24 / 48 / 72 h), configurable por el administrador.
    Por ahora solo lo usa un administrador.
    ═══════════════════════════════════════════════════════════════ */
 
 const StockModule = (() => {
   'use strict';
 
-  let filter = 'all'; // 'all' | 'due' | 'low'
+  let filter = 'all';      // 'all' | 'due' | 'low'
+  let priorityFilter = 0;  // 0 = todos los niveles, 1..3 = un nivel
   let items = [];
 
   const esc = (s) => Api.escapeHtml(s);
@@ -66,9 +68,10 @@ const StockModule = (() => {
     const lowCount = rows.filter(r => r.st.stockState === 'low' || r.st.stockState === 'empty').length;
 
     const visible = rows.filter(r =>
-      filter === 'due' ? r.st.checkDue :
-      filter === 'low' ? (r.st.stockState === 'low' || r.st.stockState === 'empty') :
-      true);
+      (!priorityFilter || r.item.priority === priorityFilter) && (
+        filter === 'due' ? r.st.checkDue :
+        filter === 'low' ? (r.st.stockState === 'low' || r.st.stockState === 'empty') :
+        true));
 
     const groups = [1, 2, 3]
       .map(p => ({ p, rows: visible.filter(r => r.item.priority === p) }))
@@ -77,7 +80,10 @@ const StockModule = (() => {
     el.innerHTML = `
       <div class="section-header">
         <div class="section-title">📦 Insumos</div>
-        <button class="btn btn-primary btn-sm" id="stock-add-btn">+ Registrar</button>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary btn-icon" id="stock-config-btn" aria-label="Configurar tiempos de revisión" title="Configurar tiempos de revisión">⚙️</button>
+          <button class="btn btn-primary btn-sm" id="stock-add-btn">+ Registrar</button>
+        </div>
       </div>
 
       <div class="stock-summary">
@@ -95,6 +101,15 @@ const StockModule = (() => {
         </button>
       </div>
 
+      <!-- Filtro por nivel de prioridad -->
+      <div class="stock-chips" role="group" aria-label="Filtrar por nivel de prioridad">
+        ${[0, 1, 2, 3].map(p => `
+          <button class="stock-chip ${priorityFilter === p ? 'active' : ''}" data-priority="${p}">
+            ${p === 0 ? 'Todos' : `${p === 1 ? '🔴' : p === 2 ? '🟡' : '🔵'} Nivel ${p}`}
+          </button>
+        `).join('')}
+      </div>
+
       ${items.length === 0 ? `
         <div class="empty-state">
           <div class="empty-icon">📦</div>
@@ -103,12 +118,15 @@ const StockModule = (() => {
       ` : groups.length === 0 ? `
         <div class="empty-state">
           <div class="empty-icon">✅</div>
-          <div class="empty-text">${filter === 'due' ? 'No hay revisiones pendientes.' : 'No hay insumos por reponer.'}</div>
+          <div class="empty-text">${
+            filter === 'due' ? 'No hay revisiones pendientes' :
+            filter === 'low' ? 'No hay insumos por reponer' :
+            'No hay insumos'}${priorityFilter ? ` en el nivel ${priorityFilter}` : ''}.</div>
         </div>
       ` : groups.map(g => `
         <div class="card-title stock-group-title">${esc(Api.STOCK_PRIORITIES[g.p].label)} · cada ${Api.STOCK_PRIORITIES[g.p].hours} h</div>
         ${g.rows.map(({ item, st }) => `
-          <button class="stock-item p${item.priority}" data-id="${esc(item.id)}">
+          <button class="stock-item state-${st.stockState}" data-id="${esc(item.id)}">
             <div class="stock-item-main">
               <div class="stock-item-name">${categoryOf(item.category).icon} ${esc(item.name)}</div>
               <div class="stock-item-meta">${esc(nextCheckText(item, st))}</div>
@@ -126,15 +144,60 @@ const StockModule = (() => {
     `;
 
     el.querySelector('#stock-add-btn')?.addEventListener('click', () => showCategoryStep());
+    el.querySelector('#stock-config-btn')?.addEventListener('click', showPriorityConfig);
     el.querySelectorAll('.stock-kpi[data-filter]').forEach(btn => {
       btn.addEventListener('click', () => {
         filter = btn.dataset.filter === filter ? 'all' : btn.dataset.filter;
         render();
       });
     });
+    el.querySelectorAll('.stock-chip[data-priority]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        priorityFilter = Number(btn.dataset.priority);
+        render();
+      });
+    });
     el.querySelectorAll('.stock-item[data-id]').forEach(btn => {
       btn.addEventListener('click', () => showItem(btn.dataset.id));
     });
+
+    // Los insumos por reponer se reflejan en la lista de compra
+    Api.syncStockShopping().then(r => {
+      if (r && !r.ok) console.warn('No se pudo sincronizar la lista de compra:', r.error);
+    });
+  };
+
+  // ─── Configuración de tiempos de revisión por nivel ──────
+  const showPriorityConfig = () => {
+    Ui.showModal('⚙️ Tiempos de revisión', `
+      <div class="text-xs text-muted" style="margin-bottom:12px;">
+        Cada cuántas horas se debe revisar el stock según el nivel de prioridad.
+      </div>
+      ${[1, 2, 3].map(p => `
+        <div class="form-group">
+          <label class="form-label" for="stock-hours-${p}">
+            ${p === 1 ? '🔴' : p === 2 ? '🟡' : '🔵'} ${esc(Api.STOCK_PRIORITIES[p].label)} · horas
+          </label>
+          ${stepperHtml(`stock-hours-${p}`, Api.STOCK_PRIORITIES[p].hours)}
+        </div>
+      `).join('')}
+    `, async () => {
+      const hours = {};
+      for (const p of [1, 2, 3]) {
+        const h = parseQty(document.getElementById(`stock-hours-${p}`)?.value);
+        if (h === null || !Number.isInteger(h) || h < 1 || h > 720) {
+          Ui.toast(`Nivel ${p}: escribe un número entero de horas entre 1 y 720`, 'warning');
+          return false;
+        }
+        hours[p] = h;
+      }
+      const res = await Api.saveStockPriorityHours(hours);
+      if (!res.ok) { Ui.toast(res.error, 'error'); return false; }
+      Ui.toast('Tiempos de revisión actualizados', 'success');
+      refreshAll();
+      return true;
+    });
+    bindFormControls();
   };
 
   // Refresca la lista, Inicio y el contador de alertas tras un cambio

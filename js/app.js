@@ -89,48 +89,6 @@ const App = (() => {
 
   const exportData = () => SettingsModule.exportData();
 
-  // ─── Botón Flotante y Modal de Emergencia (RF-89 .. RF-91) ──
-  const showEmergency = async () => {
-    const res = await Api.getSettings();
-    const settings = res.data || {};
-    const emgName = settings.emergencyContactName || 'Contacto de emergencia';
-    const emgPhone = settings.emergencyContactPhone || '';
-    const emgWA = (settings.emergencyContactWhatsapp || emgPhone).replace(/\D/g, '');
-
-    const nameEl = document.getElementById('emg-contact-name');
-    const callBtn = document.getElementById('emg-call-btn');
-    const waBtn = document.getElementById('emg-wa-btn');
-
-    if (nameEl) nameEl.textContent = emgName;
-
-    if (callBtn) {
-      if (emgPhone) {
-        callBtn.href = `tel:${emgPhone}`;
-        callBtn.style.display = '';
-      } else {
-        callBtn.removeAttribute('href');
-        callBtn.style.display = 'none';
-      }
-    }
-
-    if (waBtn) {
-      if (emgWA) {
-        const text = encodeURIComponent('🆘 Necesitamos asistencia médica urgente para el paciente. Enviado desde CuidApp');
-        waBtn.href = `https://wa.me/${emgWA}?text=${text}`;
-        waBtn.style.display = '';
-      } else {
-        waBtn.removeAttribute('href');
-        waBtn.style.display = 'none';
-      }
-    }
-
-    document.getElementById('emergency-modal')?.classList.add('open');
-  };
-
-  const closeEmergency = () => {
-    document.getElementById('emergency-modal')?.classList.remove('open');
-  };
-
   // ─── Actualización del Encabezado Global ───────────────────
   const updateHeader = async () => {
     try {
@@ -377,13 +335,6 @@ const App = (() => {
       if (e.key === 'Escape') closeSidebar();
     });
 
-    // Botón de emergencia flotante y modal
-    document.getElementById('emergency-fab')?.addEventListener('click', showEmergency);
-    document.getElementById('emg-dismiss-btn')?.addEventListener('click', closeEmergency);
-    document.getElementById('emergency-modal')?.addEventListener('click', (e) => {
-      if (e.target.id === 'emergency-modal') closeEmergency();
-    });
-
     // Configurar formularios de autenticación
     setupAuthUI();
 
@@ -434,8 +385,6 @@ const App = (() => {
     openSidebar,
     closeSidebar,
     exportData,
-    showEmergency,
-    closeEmergency,
     updateHeader
   };
 })();
