@@ -1,58 +1,71 @@
 # CuidApp — Cuidados en Casa
 
-**CuidApp** coordina el cuidado domiciliario de un paciente crítico entre familiares, enfermeros, cuidadores y médicos: turnos y personal, menú y compras, y control de insumos y medicamentos por nivel de prioridad, con auditoría integral.
+**CuidApp** es una aplicación web, pensada para usarse desde el iPhone, que ayuda a coordinar el cuidado domiciliario de un paciente entre familiares, cuidadores, enfermería y médicos.
 
 **Producción:** https://cuid-app-ten.vercel.app/
 
----
+## Qué hace
 
-##  Stack Tecnológico
+| Módulo | Para qué sirve | Quién lo usa |
+|---|---|---|
+| 🏥 **Inicio** | Resumen del día: avisos de insumos, menú de hoy, lista de compra, notas de relevo y alertas | Todos |
+| 🍽️ **Menú** | Recetas, planificación semanal, complementos y lista de compras (con envío por WhatsApp) | Todos |
+| 📦 **Insumos** | Registro de insumos y medicamentos con stock objetivo y prioridad; revisiones periódicas según el nivel | Solo admin |
+| 👥 **Roles y Personal** | Equipo de cuidado, turnos, notas de relevo y aprobación de cuentas | Todos (Usuarios: solo admin) |
+| ⚙️ **Configuración** | Perfil propio, datos del paciente y sesión | Todos (datos del paciente: solo admin) |
+| 🔍 **Auditoría** | Registro inmutable de todos los cambios, en lenguaje llano | Solo admin |
+| 💾 **Guardar copia** | Descarga un respaldo completo en JSON | Solo admin |
 
-- **Frontend:** HTML5 + CSS3 (diseño optimizado para Safari en iOS) + JavaScript modular (IIFE).
-- **Sin paso de build:** Sin frameworks (React, Vue, etc.), sin `npm`, sin bundlers ni `package.json`.
-- **Backend & Base de Datos:** [Supabase](https://supabase.com) (PostgreSQL 15+, GoTrue Auth, Row Level Security, triggers de auditoría).
-- **Despliegue:** [Vercel](https://vercel.com) como sitio web estático bajo HTTPS.
-- **Dependencias externas:** Únicamente `@supabase/supabase-js` v2, vendorizada localmente en `js/vendor/supabase.js`.
+La navegación es un **sidebar**. En el iPhone se abre con ☰ y en pantallas de 900 px o más queda fijo.
 
----
+## Stack
 
-##  Ejecución en Local
+- **Frontend:** HTML, CSS y JavaScript sin frameworks ni paso de build. Cada módulo es un archivo en `js/`.
+- **Backend:** [Supabase](https://supabase.com) (PostgreSQL, autenticación, Row Level Security y triggers de auditoría).
+- **Hosting:** [Vercel](https://vercel.com) como sitio estático. Cada cambio en `main` se publica solo.
+- **Única dependencia:** `@supabase/supabase-js` v2, incluida en `js/vendor/supabase.js`.
 
-Para ejecutar CuidApp en entorno de desarrollo local basta con servir los archivos mediante cualquier servidor estático:
+## Estructura
 
-1. **Con Live Server (VS Code):** Clic derecho en `index.html` → *Open with Live Server*.
-2. **Con Python:**
-   ```bash
-   python -m http.server 8000
-   ```
-3. `js/config.js` ya viene con las credenciales de Supabase configuradas y versionadas. La clave que
-   contiene es pública por diseño (una `publishable key`, no la `service_role`): lo que protege los
-   datos es la Row Level Security en Supabase, no mantenerla en secreto. No hace falta tocar nada
-   para conectarse al backend real.
+```
+index.html            Página única: pantallas de acceso, sidebar, paneles y modales
+css/styles.css        Estilos (modo oscuro, pensado para iPhone)
+js/
+  config.js           URL y clave pública de Supabase, flag LOCAL_MODE
+  auth.js             Sesión, registro, aprobación y rol (admin / cuidador)
+  api.js              Capa de datos: todo acceso a Supabase pasa por aquí
+  local-store.js      Almacenamiento en el navegador (modo local y parte del Menú)
+  ui.js               Modales, confirmaciones, avisos y panel de alertas
+  app.js              Navegación, sidebar y arranque
+  dashboard.js        Inicio
+  food.js             Menú
+  stock.js            Insumos
+  roles.js            Roles y Personal
+  settings.js         Configuración y copia de seguridad
+  audit.js            Auditoría
+supabase/             Scripts SQL, numerados en orden de ejecución
+docs/                 Documentación
+```
 
-### Modo local sin Supabase
+## Puesta en marcha rápida
 
-`js/config.js` tiene un flag `LOCAL_MODE`. En `true`, la app opera 100% en el navegador y persiste
-los datos en `localStorage` de ese equipo (vía `js/local-store.js`), sin necesitar internet ni una
-cuenta de Supabase — útil para probar la interfaz rápido. En `false` (el valor actual en el
-repositorio), la app se conecta a Supabase en la nube con las credenciales indicadas en el mismo
-archivo.
+1. En Supabase → **SQL Editor**, ejecuta los archivos de `supabase/` en orden (de `01` a `08`). El detalle está en la [documentación técnica](docs/DOCUMENTACION-TECNICA.md#4-base-de-datos).
+2. Crea el primer administrador ([procedimiento](docs/DOCUMENTACION-TECNICA.md#6-primer-administrador)).
+3. Para desarrollo local, sirve la carpeta con cualquier servidor estático, por ejemplo con *Live Server* de VS Code o con `python -m http.server 8000`.
 
----
+`js/config.js` ya trae la URL y la clave **pública** de Supabase. Esa clave no es secreta: lo que protege los datos es la Row Level Security. **Nunca** pongas la clave `service_role` en el repositorio.
 
-##  Documentación
+## Documentación
 
-- [Especificación de Requisitos (SRS v2.0)](docs/ESPECIFICACION-REQUISITOS.md)
-- [Plan de Desarrollo](docs/PLAN-DESARROLLO.md)
-- [Tutorial de Cuentas y Roles](docs/TUTORIAL-CUENTAS.md)
-- [Guía de Despliegue en Vercel y Supabase](docs/DEPLOY.md)
-
----
+| Documento | Contenido |
+|---|---|
+| [Plano del MVP](docs/MVP.md) | Mapa de lo que tiene la aplicación hoy, en una página |
+| [Manual de usuario](docs/MANUAL-USUARIO.md) | Cómo se usa cada pantalla, para cuidadores y administradores |
+| [Casos de uso](docs/CASOS-DE-USO.md) | Actores y flujos principales, paso a paso |
+| [Documentación técnica](docs/DOCUMENTACION-TECNICA.md) | Arquitectura, datos, seguridad, despliegue, operación y límites conocidos |
 
 ## Créditos
 
 El código de CuidApp fue desarrollado por un familiar, en buena medida asistido por IA.
 
-Roberto Siracusa se encargó únicamente del despliegue: configuración del proyecto en
-Supabase, conexión de la aplicación al backend y publicación en Vercel. No participó
-del desarrollo de la aplicación.
+Roberto Siracusa se encargó únicamente del despliegue: configuración del proyecto en Supabase, conexión de la aplicación al backend y publicación en Vercel. No participó del desarrollo de la aplicación.
