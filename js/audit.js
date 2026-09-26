@@ -41,7 +41,9 @@ const AuditModule = (() => {
     weekly_plan: 'Plan semanal',
     complementos: 'Complementos',
     complemento_ingredients: 'Ingredientes de complementos',
-    shopping_list: 'Lista de compras'
+    shopping_list: 'Lista de compras',
+    stock_items: 'Control de insumos',
+    stock_checks: 'Revisiones de stock'
   };
 
   const CAMPOS = {
@@ -95,7 +97,10 @@ const AuditModule = (() => {
     blood_pressure_dia: 'tensión diastólica',
     heart_rate: 'frecuencia cardíaca',
     temperature: 'temperatura',
-    oxygen_saturation: 'saturación de oxígeno'
+    oxygen_saturation: 'saturación de oxígeno',
+    target_stock: 'stock objetivo',
+    priority: 'nivel de prioridad',
+    last_checked_at: 'última revisión'
   };
 
   /**
@@ -133,6 +138,11 @@ const AuditModule = (() => {
       } else if (entry.tableName === 'inventory_items') {
         const itemName = newV.name ? ` "${Api.escapeHtml(newV.name)}"` : '';
         sentence = `<strong>${actor}</strong> agregó el insumo${itemName}`;
+      } else if (entry.tableName === 'stock_items') {
+        const itemName = newV.name ? ` "${Api.escapeHtml(newV.name)}"` : '';
+        sentence = `<strong>${actor}</strong> registró el insumo${itemName} (objetivo ${Api.escapeHtml(newV.target_stock ?? '—')}, nivel ${Api.escapeHtml(newV.priority ?? '—')})`;
+      } else if (entry.tableName === 'stock_checks') {
+        sentence = `<strong>${actor}</strong> revisó stock: <strong>${Api.escapeHtml(newV.quantity ?? '—')}</strong> (antes ${Api.escapeHtml(newV.previous_quantity ?? 'sin conteo')})`;
       } else if (entry.tableName === 'tasks') {
         const taskTitle = newV.title ? ` "${Api.escapeHtml(newV.title)}"` : '';
         sentence = `<strong>${actor}</strong> creó la tarea${taskTitle}`;

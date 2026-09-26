@@ -1,6 +1,6 @@
 # CuidApp — Cuidados en Casa
 
-**CuidApp** coordina el cuidado domiciliario de un paciente crítico entre familiares, enfermeros, cuidadores y médicos: turnos, administración de dosis de medicamentos, control de insumos e inventario, tareas por turno, agenda médica, alimentación, compras y registro de gastos con auditoría integral.
+**CuidApp** coordina el cuidado domiciliario de un paciente crítico entre familiares, enfermeros, cuidadores y médicos: turnos y personal, menú y compras, y control de insumos y medicamentos por nivel de prioridad, con auditoría integral.
 
 **Producción:** https://cuid-app-ten.vercel.app/
 

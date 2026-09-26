@@ -93,7 +93,7 @@ const SettingsModule = (() => {
           <div class="card" style="margin-bottom:16px;">
             <div class="card-title">💾 RESPALDO DEL EXPEDIENTE</div>
             <p style="font-size:0.8125rem; color:var(--text-sec); margin-bottom:12px; line-height:1.5;">
-              Descarga una copia completa en formato JSON con todos los datos del paciente (turnos, dosis, inventario, tareas y gastos).
+              Descarga una copia completa en formato JSON con todos los datos del paciente (turnos, personal, menú e insumos).
             </p>
             <button id="export-json-btn" class="btn btn-secondary btn-full">
               📥 Exportar todo a JSON
